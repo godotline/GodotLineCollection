@@ -98,10 +98,6 @@ func _create_import_dialog() -> void:
 	_import_dialog.title = "选择PCK文件"
 	_import_dialog.size = Vector2i(600, 400)
 	_import_dialog.file_selected.connect(_on_pck_file_selected)
-
-	if OS.has_feature("android"):
-		_import_dialog.use_native_dialog = true
-
 	add_child(_import_dialog)
 
 
@@ -587,19 +583,10 @@ func _on_refresh_button_pressed() -> void:
 
 
 func _on_import_pck_pressed() -> void:
-	# On Android, FileDialog.use_native_dialog = true triggers SAF system file picker
-	# which returns a content:// URI (handled in _on_pck_file_selected).
 	_import_dialog.popup_centered()
 
 
 func _on_pck_file_selected(path: String) -> void:
-	if OS.has_feature("android") and path.begins_with("content://"):
-		var cached := _android_copy_saf_content(path)
-		if cached.is_empty():
-			info_label.text = "无法读取PCK文件"
-			return
-		path = cached
-
 	var result := _validate_pck(path)
 	if result.is_empty():
 		info_label.text = "无效PCK：未找到关卡场景"
@@ -616,61 +603,6 @@ func _on_pck_file_selected(path: String) -> void:
 	loaded_pcks.append(path)
 	info_label.text = "正在加载: %s" % level_name
 	get_tree().change_scene_to_file(scene_path)
-
-
-## On Android, SAF returns a content:// URI instead of a file path.
-## This method copies the content:// file to a local cache directory
-## using JavaObject to bridge Android's ContentResolver API.
-func _android_copy_saf_content(uri: String) -> String:
-	var jcw := Engine.get_singleton("JavaClassWrapper")
-	if jcw == null:
-		return ""
-
-	var godot_android := Engine.get_singleton("GodotAndroid")
-	if godot_android == null:
-		return ""
-
-	var activity := godot_android.call("getActivity")
-	if activity == null:
-		return ""
-
-	var Uri := jcw.wrap("android.net.Uri")
-	var uri_obj := Uri.call("parse", uri)
-	if uri_obj == null:
-		return ""
-
-	var content_resolver := activity.call("getContentResolver")
-	if content_resolver == null:
-		return ""
-
-	var input_stream := content_resolver.call("openInputStream", uri_obj)
-	if input_stream == null:
-		return ""
-
-	var cache_dir := ProjectSettings.globalize_path("user://cache/imports")
-	DirAccess.make_dir_recursive_absolute(cache_dir)
-	var dest_path := cache_dir.path_join("import_%d.pck" % Time.get_unix_time_from_system())
-
-	var fos := JavaObject("java.io.FileOutputStream", dest_path)
-	var ArrayClass := jcw.wrap("java.lang.reflect.Array")
-	var Byte := jcw.wrap("java.lang.Byte")
-	var byte_type := Byte.get("TYPE")
-
-	var buf_size := 65536
-	var buffer := ArrayClass.call("newInstance", byte_type, buf_size)
-	var bytes_read := input_stream.call("read", buffer)
-	while bytes_read != null and int(bytes_read) > 0:
-		fos.call("write", buffer, 0, int(bytes_read))
-		buffer = ArrayClass.call("newInstance", byte_type, buf_size)
-		bytes_read = input_stream.call("read", buffer)
-
-	fos.call("close")
-	input_stream.call("close")
-
-	if FileAccess.file_exists(dest_path):
-		print("[LevelManager] Copied SAF content to: ", dest_path)
-		return dest_path
-	return ""
 
 
 func _update_user_display() -> void:

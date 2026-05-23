@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sed -i 's/\\\\tvar jcw := Engine.get_singleton\\(\"JavaClassWrapper\"\\)/\\\\tvar jcw = Engine.get_singleton\\(\"JavaClassWrapper\"\\)/' Scripts/LevelManager.gd)",
+      "Bash(sed -i 's/\\\\tvar godot_android := Engine.get_singleton\\(\"GodotAndroid\"\\)/\\\\tvar godot_android = Engine.get_singleton\\(\"GodotAndroid\"\\)/' Scripts/LevelManager.gd)",
+      "Bash(sed -i 's/\\\\tvar activity := godot_android.call\\(\"getActivity\"\\)/\\\\tvar activity = godot_android.call\\(\"getActivity\"\\)/' Scripts/LevelManager.gd)",
+      "Bash(git restore *)"
+    ]
+  }
+}
