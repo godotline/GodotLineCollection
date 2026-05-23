@@ -52,6 +52,16 @@ var debug := false
 @export var allowTurn := true
 @export var disallow_input := false
 
+## 音乐延迟（秒）
+## delay > 0 : 线先动，音乐延后播放
+## delay < 0 : 音乐先播，线原地不动等待 |delay| 秒
+## delay = 0 : 不做延迟，线和音乐同时开始
+@export var music_delay: float = 0.0
+## 音乐音量 (0.0 ~ 1.0)
+@export var music_volume: float = 1.0
+
+var _game_starting := false
+
 func _ready() -> void:
 	instance = self
 	if not Engine.is_editor_hint():
@@ -192,32 +202,82 @@ func _play_land_effect() -> void:
 
 func turn():
 	if is_on_floor() or fly:
-		if animation_node and not animation_node.is_playing():
-			# Don't reset anim_time if we're resuming from a paused state (after revive)
-			if LevelManager.line_crossing_crown == 0 and not $MusicPlayer.stream_paused:
-				LevelManager.anim_time = 0
-			animation_node.play("level")
-			animation_node.seek(LevelManager.anim_time)
-			if level_data and level_data.levelAudioClip:
-				if $MusicPlayer.stream_paused:
-					# Resume paused music (after revive)
-					$MusicPlayer.stream_paused = false
-				elif not $MusicPlayer.playing:
-					# Start fresh music with output latency compensation
-					$MusicPlayer.stream = level_data.levelAudioClip
-					var music_start_time: float = level_data.get_audio_start_time()
-					_start_music_with_latency(music_start_time)
-		if is_start :
+		if not is_start and not _game_starting:
+			# 第一次点击：启动游戏（考虑 music_delay）
+			_game_starting = true
+			_start_game(music_delay)
+			return
+		if is_start:
+			# 后续点击：正常转向
+			if animation_node and not animation_node.is_playing():
+				# Don't reset anim_time if we're resuming from a paused state (after revive)
+				if LevelManager.line_crossing_crown == 0 and not $MusicPlayer.stream_paused:
+					LevelManager.anim_time = 0
+				animation_node.play("level")
+				animation_node.seek(LevelManager.anim_time)
+				if level_data and level_data.levelAudioClip:
+					if $MusicPlayer.stream_paused:
+						# Resume paused music (after revive)
+						$MusicPlayer.stream_paused = false
+					elif not $MusicPlayer.playing:
+						# Start fresh music with output latency compensation
+						$MusicPlayer.stream = level_data.levelAudioClip
+						var music_start_time: float = level_data.get_audio_start_time()
+						_start_music_with_latency(music_start_time)
 			emit_signal("onturn")
 			_currentDirection = 1 - _currentDirection
 			rotation_degrees = current_direction
-		else:
-			is_start = true
-			LevelManager.GameState = LevelManager.GameStatus.Playing
-			rotation_degrees = current_direction
-		velocity = to_global(Vector3(0,0,1) * speed) - position
-		past_translation = position
+			velocity = to_global(Vector3(0,0,1) * speed) - position
+			past_translation = position
+			new_line()
+
+## 启动游戏（与 Unity 版 StartGame 协程一致）
+## delay > 0 : 线先动，音乐延后 delay 秒播放
+## delay < 0 : 音乐先播，线原地不动等待 |delay| 秒
+## delay = 0 : 不做延迟，线和音乐同时开始
+func _start_game(delay: float) -> void:
+	if delay <= 0.0:
+		# 音乐先播（或同时），然后线开始动
+		_play_music_start()
 		new_line()
+
+		if delay < 0.0:
+			# 音乐先播，等待 |delay| 秒后线再动
+			await get_tree().create_timer(absf(delay)).timeout
+
+		_activate_game()
+	else:
+		# 线先动，音乐延后播放
+		_activate_game()
+		new_line()
+
+		await get_tree().create_timer(delay).timeout
+
+		_play_music_start()
+
+## 激活游戏状态、启动动画
+func _activate_game() -> void:
+	is_start = true
+	_game_starting = false
+	LevelManager.GameState = LevelManager.GameStatus.Playing
+	rotation_degrees = current_direction
+	velocity = to_global(Vector3(0,0,1) * speed) - position
+	past_translation = position
+
+	if animation_node:
+		if LevelManager.line_crossing_crown == 0:
+			LevelManager.anim_time = 0
+		animation_node.play("level")
+		animation_node.seek(LevelManager.anim_time)
+
+## 播放音乐（首次启动时调用，含输出延迟补偿）
+func _play_music_start() -> void:
+	if not level_data or not level_data.levelAudioClip:
+		return
+	$MusicPlayer.stream = level_data.levelAudioClip
+	$MusicPlayer.volume_db = linear_to_db(music_volume)
+	var music_start_time: float = level_data.get_audio_start_time()
+	_start_music_with_latency(music_start_time)
 
 func _start_music_with_latency(music_start_time: float) -> void:
 	# 延迟音乐播放以补偿音频输出延迟（蓝牙耳机等）
