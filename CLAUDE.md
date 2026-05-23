@@ -91,3 +91,57 @@ godot4.6 --path . res://Scenes/LevelManager.tscn
 - Signal-driven UI updates: `UserManager.user_info_updated`, `CloudArchiveService.sync_complete`
 - All service methods return `Variant` — check `is GASError` before use
 - PCK scene paths use `[Scenes]/` and `[Scripts]/` bracket notation inside PCKs
+
+## Upstream Template Sync
+
+The `#Template/` directory is synced from the upstream [godot-line](https://github.com/meny2333/godot-line) template repository.
+
+### Git Remote Setup
+
+```bash
+# Add upstream remote (if not already added)
+git remote add upstream https://github.com/meny2333/godot-line.git
+
+# Verify remotes
+git remote -v
+```
+
+### Sync #Template from Upstream
+
+**Option 1: Use the sync script (Recommended)**
+
+```bash
+# Windows
+scripts\sync-template.bat
+
+# Linux/macOS
+./scripts/sync-template.sh
+```
+
+**Option 2: Manual sync**
+
+```bash
+# 1. Fetch upstream changes
+git fetch upstream
+
+# 2. Check differences
+git diff --stat HEAD upstream/main -- "#Template/"
+
+# 3. Remove current #Template
+git rm -r "#Template"
+git commit -m "chore(template): remove #Template for upstream sync"
+
+# 4. Import from upstream
+git read-tree -u --prefix="#Template/" upstream/main:"#Template/"
+git add "#Template/"
+git commit -m "feat(template): sync #Template from upstream/godot-line"
+
+# 5. Push changes
+git push origin main
+```
+
+### Important Notes
+
+- The sync process **replaces** the entire `#Template/` directory with the upstream version
+- Any local modifications to `#Template/` will be lost — use `Scripts/` or autoloads for customizations
+- Always review the diff before committing to understand what changed in the template
