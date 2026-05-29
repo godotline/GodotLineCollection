@@ -98,6 +98,10 @@ func _create_import_dialog() -> void:
 	_import_dialog.title = "选择PCK文件"
 	_import_dialog.size = Vector2i(600, 400)
 	_import_dialog.file_selected.connect(_on_pck_file_selected)
+
+	if OS.has_feature("android"):
+		_import_dialog.use_native_dialog = true
+
 	add_child(_import_dialog)
 
 
@@ -587,6 +591,12 @@ func _on_import_pck_pressed() -> void:
 
 
 func _on_pck_file_selected(path: String) -> void:
+	if path.begins_with("content://"):
+		path = _copy_content_uri(path)
+		if path.is_empty():
+			info_label.text = "无法读取文件"
+			return
+
 	var result := _validate_pck(path)
 	if result.is_empty():
 		info_label.text = "无效PCK：未找到关卡场景"
@@ -603,6 +613,41 @@ func _on_pck_file_selected(path: String) -> void:
 	loaded_pcks.append(path)
 	info_label.text = "正在加载: %s" % level_name
 	get_tree().change_scene_to_file(scene_path)
+
+
+func _copy_content_uri(uri: String) -> String:
+	# Copy SAF content:// URI to local cache using Godot's FileAccess
+	# (avoids fragile JavaClassWrapper reflection, works on Android 14+)
+	var src := FileAccess.open(uri, FileAccess.READ)
+	if src == null:
+		push_error("SAF: failed to open content URI: %s" % uri)
+		return ""
+
+	var cache_dir := ProjectSettings.globalize_path("user://cache/imports")
+	DirAccess.make_dir_recursive_absolute(cache_dir)
+	var dest := cache_dir.path_join("import_%d.pck" % Time.get_unix_time_from_system())
+
+	var dst := FileAccess.open(dest, FileAccess.WRITE)
+	if dst == null:
+		push_error("SAF: failed to write cache file: %s" % dest)
+		return ""
+
+	# Buffer the copy in chunks to avoid OOM on large PCKs
+	var buf: PackedByteArray
+	while true:
+		buf = src.get_buffer(1 << 16)  # 64 KB chunks
+		if buf.is_empty():
+			break
+		dst.store_buffer(buf)
+
+	src.close()
+	dst.close()
+
+	if FileAccess.file_exists(dest):
+		print("SAF: copied %s -> %s" % [uri, dest])
+		return dest
+	push_error("SAF: copy completed but file not found at %s" % dest)
+	return ""
 
 
 func _update_user_display() -> void:
