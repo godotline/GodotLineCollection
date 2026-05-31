@@ -1,6 +1,0 @@
-[gd_scene format=3 uid="uid://dm3cdln7php67"]
-
-[ext_resource type="Script" uid="uid://doty4cwb3foiu" path="res://#Template/[Scripts]/Trigger/FallPredictor.gd" id="1"]
-
-[node name="FallPredictor" type="Node3D" unique_id=385817455]
-script = ExtResource("1")
