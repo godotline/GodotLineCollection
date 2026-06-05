@@ -812,6 +812,16 @@ func _on_download_completed(save_id: String, cached_path: String) -> void:
 		print("[LevelManager] Download completed for unexpected save_id: ", save_id)
 		return
 
+	# Verify downloaded file integrity
+	var expected_md5 := PCKDownloader.instance.get_md5(save_id)
+	if not expected_md5.is_empty():
+		var actual_md5 := _compute_file_md5(cached_path)
+		if actual_md5.to_lower() != expected_md5.to_lower():
+			print("[LevelManager] Downloaded PCK integrity check FAILED for %s" % save_id)
+			DirAccess.remove_absolute(cached_path)
+			info_label.text = "文件完整性校验失败，请联系管理员"
+			return
+
 	# Load the downloaded PCK
 	var success := ProjectSettings.load_resource_pack(cached_path)
 	if not success:
