@@ -53,16 +53,25 @@
 
 ### 改造方法：`_start_level()`
 
+移除 `loaded_pcks` 的短路返回，每次启动关卡都走完整校验流程。
+校验逻辑由 `_load_pck()` 内调用 `_verify_pck_integrity()` 统一处理。
+
 ```
 _start_level()
-  ├─ 加载本地 PCK → _verify_pck_integrity()
-  │     └─ 失败且有远端 URL → 重新下载
-  │     └─ 失败且无远端 URL → 报错 "PCK文件损坏"
-  │     └─ 通过 → 正常加载
-  ├─ 加载缓存 PCK → _verify_pck_integrity()
-  │     └─ 失败 → 删缓存文件 → 重新下载
-  │     └─ 通过 → 正常加载
-  └─ 已加载 (loaded_pcks) → 直接跳转场景（跳过校验，已加载过的必然已验证）
+  ├─ 本地 PCK 存在 → _load_pck()
+  │     └─ _verify_pck_integrity()
+  │           ├── 通过 → 正常加载
+  │           ├── 失败且有远端 URL → 重新下载
+  │           └── 失败且无远端 URL → 尝试加载（不阻塞，可能是本地自定义PCK）
+  │
+  ├─ 缓存 PCK 存在 → _load_pck()
+  │     └─ _verify_pck_integrity()
+  │           ├── 通过 → 正常加载
+  │           └── 失败 → 删缓存 → 重新下载
+  │
+  └─ 无本地/缓存 → 下载 → _on_download_completed()
+          ├── MD5 校验通过 → 加载 → 切换场景
+          └── MD5 校验失败 → 删缓存 → 报错（不重试）
 ```
 
 ### 改造方法：`_on_download_completed()`
@@ -74,7 +83,8 @@ _start_level()
 
 ### 改造方法：`_load_pck()`
 
-加载前调用 `_verify_pck_integrity()` 做校验。
+`_load_pck()` 内部调用 `_verify_pck_integrity()` 做校验。旧版 `loaded_pcks` 快捷路径删除，
+每次调用都完整走 PCK 校验 + 加载流程。`loaded_pcks` 仅用于跟踪记录。
 
 ## 数据流图
 
@@ -84,25 +94,19 @@ _start_level()
       ▼
   _start_level()
       │
-      ├── 已加载 → 直接切换场景
+      ├── 本地 PCK 存在 → _load_pck()
+      │     └── _verify_pck_integrity()
+      │           ├── 通过 → ProjectSettings.load_resource_pack()
+      │           ├── 失败且有远端 URL → 重新下载
+      │           └── 失败且无远端 URL → 仍尝试加载（不阻塞）
       │
-      ├── 本地 PCK 存在 → _verify_pck_integrity()
-      │       │
-      │       ├── 通过 → _load_pck() → 切换场景
-      │       │
-      │       └── 失败 → 有远端 URL? → 重新下载
-      │                       └── 无远端 URL → 报错
-      │
-      ├── 缓存 PCK 存在 → _verify_pck_integrity()
-      │       │
-      │       ├── 通过 → _load_pck() → 切换场景
-      │       │
-      │       └── 失败 → 删缓存 → 重新下载
+      ├── 缓存 PCK 存在 → _load_pck()
+      │     └── _verify_pck_integrity()
+      │           ├── 通过 → 加载
+      │           └── 失败 → 删缓存 → 重新下载
       │
       └── 无本地/缓存 → 下载 → _on_download_completed()
-              │
-              ├── MD5 校验通过 → _load_pck() → 切换场景
-              │
+              ├── MD5 校验通过 → 加载 → 切换场景
               └── MD5 校验失败 → 删缓存 → 报错（不重试）
 ```
 
