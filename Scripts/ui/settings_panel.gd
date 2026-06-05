@@ -23,6 +23,8 @@ func _ready() -> void:
 	_center_panel()
 	_populate_sources()
 	_scan_cache()
+	_view_option.add_item("卡片视图", 0)
+	_view_option.add_item("列表视图", 1)
 	_load_display_settings()
 
 	_back_btn.pressed.connect(_on_back_pressed)

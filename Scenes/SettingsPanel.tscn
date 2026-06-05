@@ -283,7 +283,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(1, 1, 1, 0.85)
 theme_override_font_sizes/font_size = 13
-items = Array[Dictionary]([{"id":0,"metadata":{},"text":"卡片视图"},{"id":1,"metadata":{},"text":"列表视图"}])
+items = Array[Dictionary]()
 
 [node name="MusicRow" type="HBoxContainer" parent="Panel/Margin/VBox/Scroll/Content/DisplaySection"]
 layout_mode = 2
