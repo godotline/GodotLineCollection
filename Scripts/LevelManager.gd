@@ -516,6 +516,11 @@ func _on_panel_gui_input(event: InputEvent) -> void:
 
 
 func _start_level() -> void:
+	# Block level start if a download is already in progress
+	if _pending_download_data != null:
+		info_label.text = "正在下载中，请稍候..."
+		return
+
 	var data: MenuLevelData = levels[current_index]
 	var key: String = data.resource_path if data.resource_path != "" else data.title
 
@@ -533,11 +538,13 @@ func _start_level() -> void:
 	var remote_url := PCKDownloader.instance.get_url(data.save_id)
 
 	if local_exists:
-		_load_pck(data.pck_path, key)
+		if not _load_pck(data.pck_path, key):
+			return
 	elif not remote_url.is_empty():
 		# Remote URL available — try cache first, otherwise download
 		if PCKDownloader.instance.is_cached(data.save_id):
-			_load_pck(PCKDownloader.instance.get_cached_path(data.save_id), key)
+			if not _load_pck(PCKDownloader.instance.get_cached_path(data.save_id), key):
+				return
 		else:
 			_start_remote_download(data, key)
 			return
@@ -732,16 +739,17 @@ func _scan_levels() -> void:
 		levels = list.levels
 
 
-func _load_pck(pck_path: String, level_key: String) -> void:
+func _load_pck(pck_path: String, level_key: String) -> bool:
 	var global_path: String = pck_path if pck_path.is_absolute_path() else ProjectSettings.globalize_path(pck_path)
 	if not FileAccess.file_exists(global_path):
 		info_label.text = "PCK文件不存在"
-		return
+		return false
 	var success := ProjectSettings.load_resource_pack(global_path)
 	if success:
 		loaded_pcks.append(level_key)
-	else:
-		info_label.text = "PCK加载失败"
+		return true
+	info_label.text = "PCK加载失败"
+	return false
 
 
 func _start_remote_download(data: MenuLevelData, level_key: String) -> void:
@@ -763,13 +771,23 @@ func _on_download_completed(save_id: String, cached_path: String) -> void:
 	_pending_download_data = null
 	_pending_download_key = ""
 
+	# Validate the completed download matches what we requested
+	if data == null or save_id != data.save_id:
+		print("[LevelManager] Download completed for unexpected save_id: ", save_id)
+		return
+
 	# Load the downloaded PCK
 	var success := ProjectSettings.load_resource_pack(cached_path)
 	if not success:
 		info_label.text = "PCK加载失败"
 		return
 	loaded_pcks.append(key)
-	get_tree().change_scene_to_file(data.scene_path)
+
+	var scene: String = data.scene_path
+	if scene.is_empty():
+		info_label.text = "未配置场景路径"
+		return
+	get_tree().change_scene_to_file(scene)
 
 
 func _on_download_failed(save_id: String, error: String) -> void:
