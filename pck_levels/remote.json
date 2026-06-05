@@ -1,0 +1,26 @@
+{
+  "download_sources": [
+    {
+      "name": "Github Raw",
+      "base_url": "https://raw.githubusercontent.com/meny2333/PCKLevels/main/"
+    },
+    {
+      "name": "Gitee Raw",
+      "base_url": "https://gitee.com/meny233/PCKLevels/raw/main/"
+    },
+    {
+      "name": "Github Raw加速(ghproxy)",
+      "base_url": "https://gh-proxy.com/https://raw.githubusercontent.com/meny2333/PCKLevels/main/"
+    }
+  ],
+  "level_urls": {
+    "inv": {
+      "filename": "inv.pck",
+      "md5": "2F3EE5C78B7FAD54C80E6D8D6ECF6975"
+    },
+    "sample": {
+      "filename": "sample.pck",
+      "md5": "40d457b1fd91d793a32e2b0f56d6ce4e"
+    }
+  }
+}

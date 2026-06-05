@@ -894,7 +894,9 @@ func _verify_pck_integrity(pck_path: String, save_id: String) -> bool:
 		return false
 
 	var match := actual_md5.to_lower() == expected_md5.to_lower()
-	if not match:
+	if match:
+		print("[LevelManager] Integrity check PASSED for %s" % save_id)
+	else:
 		print("[LevelManager] Integrity check FAILED for %s: expected %s, got %s" % [save_id, expected_md5, actual_md5])
 	return match
 
