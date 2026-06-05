@@ -32,7 +32,6 @@ var _pending_download_key: String = ""
 @onready var refresh_btn: Button = $Margin/VBox/Header/RefreshBtn
 @onready var import_btn: Button = $Margin/VBox/Header/ImportBtn
 @onready var settings_btn: Button = $Margin/VBox/Header/SettingsBtn
-@onready var source_label: Label = $Margin/VBox/Header/SourceLabel
 
 enum ViewMode { CARD, LIST }
 var _current_mode: ViewMode = ViewMode.CARD
@@ -105,12 +104,11 @@ func _create_import_dialog() -> void:
 
 
 func _update_source_label() -> void:
-	if source_label and PCKDownloader.instance.has_sources():
-		source_label.text = PCKDownloader.instance.get_source_name(PCKDownloader.instance.get_source_index())
-		source_label.visible = true
+	if PCKDownloader.instance.has_sources():
+		var name := PCKDownloader.instance.get_source_name(PCKDownloader.instance.get_source_index())
+		settings_btn.text = "源:" + name
 		settings_btn.visible = true
-	elif source_label:
-		source_label.visible = false
+	else:
 		settings_btn.visible = false
 
 
