@@ -25,13 +25,14 @@ var _animating: bool = false
 var _default_avatar: ImageTexture
 var _detail_popup: AcceptDialog
 var _import_dialog: FileDialog
-var _settings_btn: Button
-var _source_label: Label
+var _source_popup: AcceptDialog
 var _pending_download_data: MenuLevelData = null
 var _pending_download_key: String = ""
 
 @onready var refresh_btn: Button = $Margin/VBox/Header/RefreshBtn
 @onready var import_btn: Button = $Margin/VBox/Header/ImportBtn
+@onready var settings_btn: Button = $Margin/VBox/Header/SettingsBtn
+@onready var source_label: Label = $Margin/VBox/Header/SourceLabel
 
 enum ViewMode { CARD, LIST }
 var _current_mode: ViewMode = ViewMode.CARD
@@ -64,7 +65,7 @@ func _ready() -> void:
 	_apply_pending_cloud_data()
 	_apply_circle_avatar(avatar_rect)
 	_create_import_dialog()
-	_create_settings_button()
+	_update_source_label()
 	# Pre-fetch remote level URLs from GAS config (non-blocking)
 	_fetch_remote_urls()
 
@@ -120,38 +121,14 @@ func _create_import_dialog() -> void:
 	add_child(_import_dialog)
 
 
-func _create_settings_button() -> void:
-	_settings_btn = Button.new()
-	_settings_btn.text = "下载源"
-	_settings_btn.custom_minimum_size = Vector2(80, 36)
-	_settings_btn.add_theme_font_size_override("font_size", 14)
-
-	var style := refresh_btn.get_theme_stylebox("normal")
-	var hover := refresh_btn.get_theme_stylebox("hover")
-	_settings_btn.add_theme_stylebox_override("normal", style)
-	_settings_btn.add_theme_stylebox_override("hover", hover)
-	_settings_btn.add_theme_stylebox_override("pressed", style)
-	_settings_btn.pressed.connect(_on_settings_pressed)
-
-	$Margin/VBox/Header.add_child(_settings_btn)
-	$Margin/VBox/Header.move_child(_settings_btn, 1)  # 放在刷新按钮旁边
-
-	# Label to show current source
-	_source_label = Label.new()
-	_source_label.add_theme_font_size_override("font_size", 11)
-	_source_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	$Margin/VBox/Header.add_child(_source_label)
-	_update_source_label()
-
-
 func _update_source_label() -> void:
-	if _source_label and PCKDownloader.instance.has_sources():
-		_source_label.text = PCKDownloader.instance.get_source_name(PCKDownloader.instance.get_source_index())
-		_source_label.visible = true
-		_settings_btn.visible = true
-	elif _source_label:
-		_source_label.visible = false
-		_settings_btn.visible = false
+	if source_label and PCKDownloader.instance.has_sources():
+		source_label.text = PCKDownloader.instance.get_source_name(PCKDownloader.instance.get_source_index())
+		source_label.visible = true
+		settings_btn.visible = true
+	elif source_label:
+		source_label.visible = false
+		settings_btn.visible = false
 
 
 func _on_settings_pressed() -> void:
