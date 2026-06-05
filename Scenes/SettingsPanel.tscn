@@ -80,7 +80,7 @@ anchor_bottom = 1.0
 color = Color(0, 0, 0, 0.55)
 mouse_filter = 1
 [node name="Panel" type="PanelContainer" parent="."]
-custom_minimum_size = Vector2(420, 0)
+custom_minimum_size = Vector2(420, 520)
 layout_mode = 0
 theme_override_styles/panel = SubResource("StyleBoxFlat_Panel")
 [node name="Margin" type="MarginContainer" parent="Panel"]
