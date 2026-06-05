@@ -16,7 +16,7 @@ const SETTINGS_CFG_PATH := "user://settings.cfg"
 @onready var _clear_btn: Button = $Panel/Margin/VBox/Scroll/Content/CacheSection/ClearBtn
 @onready var _view_option: OptionButton = $Panel/Margin/VBox/Scroll/Content/DisplaySection/ViewRow/ViewOption
 @onready var _music_toggle: CheckButton = $Panel/Margin/VBox/Scroll/Content/DisplaySection/MusicRow/MusicToggle
-@onready var _back_btn: Button = $Panel/Margin/VBox/TitleBar/BackBtn
+@onready var _back_btn: Button = $Panel/Margin/VBox/TitleBar/HBox/BackBtn
 
 
 func _ready() -> void:
@@ -28,9 +28,9 @@ func _ready() -> void:
 	_load_display_settings()
 
 	_back_btn.pressed.connect(_on_back_pressed)
-	$Panel/Margin/VBox/TitleBar/NavIcons/SourceNav.pressed.connect(_scroll_to_section.bind(_source_section))
-	$Panel/Margin/VBox/TitleBar/NavIcons/CacheNav.pressed.connect(_scroll_to_section.bind(_cache_section))
-	$Panel/Margin/VBox/TitleBar/NavIcons/DisplayNav.pressed.connect(_scroll_to_section.bind(_display_section))
+	$Panel/Margin/VBox/TitleBar/HBox/NavIcons/SourceNav.pressed.connect(_scroll_to_section.bind(_source_section))
+	$Panel/Margin/VBox/TitleBar/HBox/NavIcons/CacheNav.pressed.connect(_scroll_to_section.bind(_cache_section))
+	$Panel/Margin/VBox/TitleBar/HBox/NavIcons/DisplayNav.pressed.connect(_scroll_to_section.bind(_display_section))
 	_clear_btn.pressed.connect(_on_clear_cache)
 	_view_option.item_selected.connect(_on_view_changed)
 	_music_toggle.toggled.connect(_on_music_toggled)
