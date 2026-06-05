@@ -89,6 +89,346 @@ func _fetch_remote_urls() -> void:
 	if PCKDownloader.instance.has_sources():
 		_update_source_label()
 
+func _create_import_dialog() -> void:
+	_import_dialog = FileDialog.new()
+	_import_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	_import_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	_import_dialog.filters = PackedStringArray(["*.pck ; PCK Files"])
+	_import_dialog.title = "选择PCK文件"
+	_import_dialog.size = Vector2i(600, 400)
+	_import_dialog.file_selected.connect(_on_pck_file_selected)
+
+	if OS.has_feature("android"):
+		_import_dialog.use_native_dialog = true
+
+	add_child(_import_dialog)
+
+
+func _update_source_label() -> void:
+	if source_label and PCKDownloader.instance.has_sources():
+		source_label.text = PCKDownloader.instance.get_source_name(PCKDownloader.instance.get_source_index())
+		source_label.visible = true
+		settings_btn.visible = true
+	elif source_label:
+		source_label.visible = false
+		settings_btn.visible = false
+
+
+func _on_settings_pressed() -> void:
+	if not PCKDownloader.instance.has_sources():
+		return
+
+	var popup := AcceptDialog.new()
+	popup.title = "选择下载源"
+	popup.size = Vector2i(400, 200)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 8)
+
+	var group := ButtonGroup.new()
+	var current_idx := PCKDownloader.instance.get_source_index()
+
+	for i in range(PCKDownloader.instance.get_source_count()):
+		var radio := CheckButton.new()
+		radio.text = PCKDownloader.instance.get_source_name(i)
+		radio.button_group = group
+		radio.button_pressed = (i == current_idx)
+		radio.pressed.connect(_on_source_selected.bind(i, popup))
+		vbox.add_child(radio)
+
+	popup.add_child(vbox)
+	add_child(popup)
+	popup.popup_centered()
+
+
+func _on_source_selected(index: int, popup: AcceptDialog) -> void:
+	PCKDownloader.instance.set_source(index)
+	_update_source_label()
+	popup.queue_free()
+
+
+func _validate_pck(pck_global_path: String) -> Dictionary:
+	var pck := preload("res://addons/PCKManager/PCKDirAccess.gd").new()
+	pck.open(pck_global_path)
+	if pck.file == null:
+		return {}
+	var paths := pck.get_paths()
+	pck.close()
+	if paths.is_empty():
+		return {}
+	return _find_level_scene(paths)
+
+
+func _find_level_scene(paths: Array[String]) -> Dictionary:
+	var scene_dirs: Dictionary = {}
+	for p in paths:
+		var clean: String = p.trim_suffix(".remap")
+		if not clean.contains("[Scenes]/"):
+			continue
+		var scenes_idx := clean.find("[Scenes]/")
+		var after := clean.substr(scenes_idx + "[Scenes]/".length())
+		var parts := after.split("/")
+		if parts.size() >= 2:
+			var dir_name: String = parts[0]
+			if not scene_dirs.has(dir_name):
+				scene_dirs[dir_name] = {"has_tscn": false, "has_tres": false}
+			if parts[1].ends_with(".tscn"):
+				scene_dirs[dir_name]["has_tscn"] = true
+			elif parts[1].ends_with(".tres"):
+				scene_dirs[dir_name]["has_tres"] = true
+
+	var best_dir: String = ""
+	for dir_name in scene_dirs:
+		if scene_dirs[dir_name]["has_tscn"] and scene_dirs[dir_name]["has_tres"]:
+			best_dir = dir_name
+			break
+
+	if best_dir.is_empty():
+		for p in paths:
+			var clean: String = p.trim_suffix(".remap")
+			if clean.ends_with(".tscn"):
+				return {"scene_path": clean, "name": "unknown"}
+
+	if best_dir.is_empty():
+		return {}
+
+	for p in paths:
+		var clean: String = p.trim_suffix(".remap")
+		if clean.contains("[Scenes]/%s/" % best_dir) and clean.ends_with(".tscn"):
+			return {"scene_path": clean, "name": best_dir}
+	return {}
+
+
+func _create_panels() -> void:
+	_slide_wrap = Control.new()
+	_slide_wrap.set_anchors_preset(PRESET_FULL_RECT)
+	_slide_wrap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	preview_clip.add_child(_slide_wrap)
+	
+	var style := _make_panel_style()
+	
+	_panel = PanelContainer.new()
+	_panel.add_theme_stylebox_override("panel", style)
+	_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	
+	_texture = TextureRect.new()
+	_texture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_texture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_texture.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_texture.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_texture.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_panel.add_child(_texture)
+	
+	_slide_wrap.add_child(_panel)
+	
+	# 点击面板: 启动关卡
+	_panel.gui_input.connect(_on_panel_gui_input)
+	
+	# 渲染后初始定位 + 飞入动画
+	preview_clip.resized.connect(_position_panels)
+	call_deferred("_setup_and_fly_in")
+
+
+func _create_list_view() -> void:
+	_list_view = ScrollContainer.new()
+	_list_view.set_anchors_preset(PRESET_FULL_RECT)
+	_list_view.visible = false
+	preview_clip.add_child(_list_view)
+	
+	_list_container = VBoxContainer.new()
+	_list_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_list_container.add_theme_constant_override("separation", 4)
+	_list_view.add_child(_list_container)
+
+
+func _make_panel_style() -> StyleBoxFlat:
+	var s := StyleBoxFlat.new()
+	s.bg_color = Color(0.08, 0.08, 0.13, 0.85)
+	s.border_width_left = 1
+	s.border_width_top = 1
+	s.border_width_right = 1
+	s.border_width_bottom = 1
+	s.border_color = Color(0.25, 0.3, 0.45, 0.4)
+	s.corner_radius_top_left = 14
+	s.corner_radius_top_right = 14
+	s.corner_radius_bottom_right = 14
+	s.corner_radius_bottom_left = 14
+	return s
+
+
+func _setup_and_fly_in() -> void:
+	# 等待布局完成
+	await get_tree().process_frame
+	_position_panels()
+	
+	if levels.is_empty() or _slide_wrap.size.x < 2:
+		return
+	
+	_animating = true
+	
+	# 初始状态: 透明
+	_panel.modulate.a = 0.0
+	
+	# 淡入动画
+	var tw := create_tween()
+	tw.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	tw.tween_property(_panel, "modulate:a", 1.0, FLY_IN_DUR)
+	
+	await tw.finished
+	_animating = false
+
+
+func _position_panels() -> void:
+	if preview_clip.size.x < 2:
+		return
+	
+	var clip_size: Vector2 = preview_clip.size
+	# 单个面板占据中间 1/3 宽度并居中
+	var pw: float = clip_size.x / 3.0
+	var h: float = clip_size.y
+	
+	_panel.position = Vector2(pw, 0)
+	_panel.size = Vector2(pw, h)
+
+
+func _update_display() -> void:
+	if levels.is_empty():
+		level_title.text = "暂无关卡"
+		author_label.text = ""
+		_texture.texture = null
+		left_arrow.visible = false
+		right_arrow.visible = false
+		counter_label.text = ""
+		if _progress_label:
+			_progress_label.visible = false
+		return
+	
+	var sz: int = levels.size()
+	left_arrow.visible = (_current_mode == ViewMode.CARD) and (sz > 1)
+	right_arrow.visible = (_current_mode == ViewMode.CARD) and (sz > 1)
+	counter_label.visible = (_current_mode == ViewMode.CARD)
+	
+	var data: MenuLevelData = levels[current_index]
+	_texture.texture = data.cover
+	_texture.visible = data.cover != null
+	
+	_panel.modulate.a = 1.0
+	
+	level_title.text = data.title if data.title != "" else "未命名关卡"
+	_ensure_progress_label()
+	var sid: String = data.save_id
+	if not sid.is_empty():
+		var prog: Dictionary = ProgressStore.get_level(sid)
+		var stars: int = prog.get("stars", 0)
+		var pct: int = prog.get("best_percent", 0)
+		var dia: int = prog.get("diamonds", 0)
+		var star_str: String = ""
+		for i in range(3):
+			star_str += "★" if i < stars else "☆"
+		_progress_label.text = "%s  %d%%  💎%d" % [star_str, pct, dia]
+		_progress_label.visible = true
+	else:
+		_progress_label.visible = false
+	author_label.text = ""
+	counter_label.text = "%d / %d" % [current_index + 1, sz]
+	_play_level_music(data)
+	info_label.text = ""
+
+
+func _play_level_music(data: MenuLevelData) -> void:
+	if data == null or data.music == null:
+		_fade_out_music()
+		_current_music_data = null
+		return
+	if _current_music_data == data and _music_player.playing:
+		return
+
+	_current_music_data = data
+	_music_player.stream = data.music
+
+	# 设置开始播放位置
+	if data.music_start > 0:
+		_music_player.play(data.music_start)
+	else:
+		_music_player.play()
+
+	# 淡入效果
+	if data.music_fade_in > 0:
+		_music_player.volume_db = -80.0
+		_fade_in_music(data.music_fade_in)
+	else:
+		_music_player.volume_db = 0.0
+
+	# 设置循环计时器
+	_setup_music_loop(data)
+
+
+## 淡入音乐
+func _fade_in_music(duration: float) -> void:
+	if _music_tween:
+		_music_tween.kill()
+	_music_tween = create_tween()
+	_music_tween.tween_property(_music_player, "volume_db", 0.0, duration)
+
+
+## 淡出音乐
+func _fade_out_music() -> void:
+	if _music_tween:
+		_music_tween.kill()
+	if _current_music_data and _current_music_data.music_fade_out > 0:
+		_is_music_fading = true
+		_music_tween = create_tween()
+		_music_tween.tween_property(_music_player, "volume_db", -80.0, _current_music_data.music_fade_out)
+		_music_tween.tween_callback(_on_music_fade_out_complete)
+	else:
+		_music_player.stop()
+		_is_music_fading = false
+
+
+## 淡出完成回调
+func _on_music_fade_out_complete() -> void:
+	_music_player.stop()
+	_is_music_fading = false
+
+
+## 设置音乐循环
+func _setup_music_loop(data: MenuLevelData) -> void:
+	_music_loop_timer = 0.0
+	if data.music_duration > 0:
+		# 使用计时器在指定时长后淡出并循环
+		var timer := get_tree().create_timer(data.music_duration - data.music_fade_out)
+		timer.timeout.connect(_on_music_segment_end)
+
+
+## 音乐片段结束时淡出并循环
+func _on_music_segment_end() -> void:
+	if _current_music_data == null:
+		return
+
+	# 淡出
+	_fade_out_music()
+
+	# 等待淡出完成后重新开始
+	await get_tree().create_timer(_current_music_data.music_fade_out).timeout
+
+	# 重新播放
+	if _current_music_data:
+		_play_level_music(_current_music_data)
+
+
+func _process(delta: float) -> void:
+	# 检查音乐是否播放到结尾（用于没有指定时长的情况）
+	if _current_music_data and _current_music_data.music_duration <= 0:
+		if _music_player.playing and not _is_music_fading:
+			# 检查是否接近结尾
+			var remaining := _music_player.stream.get_length() - _music_player.get_playback_position()
+			if remaining <= _current_music_data.music_fade_out:
+				# 淡出并循环
+				_fade_out_music()
+				await get_tree().create_timer(_current_music_data.music_fade_out).timeout
+				if _current_music_data:
+					_play_level_music(_current_music_data)
+
 
 func _on_view_toggle_pressed() -> void:
 	if _animating:
