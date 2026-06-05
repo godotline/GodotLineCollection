@@ -1,14 +1,13 @@
 class_name PCKDownloader
 extends RefCounted
 
-## Singleton instance — auto-created on first access, use as PCKDownloader.instance
-static var _instance: PCKDownloader = null
-static var instance: PCKDownloader:
-	get:
-		if _instance == null:
-			_instance = PCKDownloader.new()
-			_instance._restore_source()
-		return _instance
+## Singleton instance — call ensure_instance() once at startup, then use PCKDownloader.instance
+static var instance: PCKDownloader = null
+
+static func ensure_instance() -> void:
+	if instance == null:
+		instance = PCKDownloader.new()
+		instance._restore_source()
 
 ## Emitted periodically during download with progress percentage (0-100).
 signal download_progress(save_id: String, percent: float)
@@ -59,6 +58,21 @@ func fetch_level_urls() -> Dictionary:
 	if typeof(data) != TYPE_DICTIONARY:
 		print("[PCKDownloader] Config data is not a Dictionary")
 		return _filename_map
+
+	# If config is encrypted, decrypt it first
+	if data.has("config") and typeof(data["config"]) == TYPE_STRING:
+		var decrypted := GASEncryption.decrypt(data["config"], GASConfigManager.app_token)
+		if decrypted.is_empty():
+			print("[PCKDownloader] Failed to decrypt config")
+			return _filename_map
+		var json := JSON.new()
+		if json.parse(decrypted) != OK:
+			print("[PCKDownloader] Failed to parse decrypted config JSON")
+			return _filename_map
+		data = json.data
+		if typeof(data) != TYPE_DICTIONARY:
+			print("[PCKDownloader] Decrypted config is not a Dictionary")
+			return _filename_map
 
 	# Extract download sources
 	if data.has("download_sources") and typeof(data["download_sources"]) == TYPE_ARRAY:

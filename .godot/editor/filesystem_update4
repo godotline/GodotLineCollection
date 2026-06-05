@@ -1,1 +1,2 @@
-res://export_presets.cfg
+res://Scripts/LevelManager.gd
+res://Scripts/PCKDownloader.gd

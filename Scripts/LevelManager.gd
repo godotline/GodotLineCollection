@@ -65,6 +65,9 @@ func _ready() -> void:
 	_apply_pending_cloud_data()
 	_apply_circle_avatar(avatar_rect)
 	_create_import_dialog()
+	# Ensure PCKDownloader singleton is initialized before any access
+	PCKDownloader.ensure_instance()
+	# Hide source button until remote URLs are loaded
 	_update_source_label()
 	# Pre-fetch remote level URLs from GAS config (non-blocking)
 	_fetch_remote_urls()
