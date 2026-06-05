@@ -156,7 +156,7 @@ theme_override_styles/normal = SubResource("StyleBoxFlat_SecBtn")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_SecBtn")
 theme_override_styles/hover = SubResource("StyleBoxFlat_SecBtnHover")
 theme_override_styles/disabled = SubResource("StyleBoxFlat_DisabledBtn")
-text = "源"
+text = "设置"
 
 [node name="SpacerL" type="Control" parent="Margin/VBox/Header" unique_id=1273816741]
 layout_mode = 2

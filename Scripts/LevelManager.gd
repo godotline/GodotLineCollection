@@ -62,6 +62,7 @@ func _ready() -> void:
 	_apply_pending_cloud_data()
 	_apply_circle_avatar(avatar_rect)
 	_create_import_dialog()
+	_apply_display_settings()
 	# Ensure PCKDownloader singleton is initialized before any access
 	PCKDownloader.ensure_instance()
 	# Pre-fetch remote level URLs from GAS config (non-blocking)
@@ -293,6 +294,22 @@ func _update_display() -> void:
 	counter_label.text = "%d / %d" % [current_index + 1, sz]
 	_play_level_music(data)
 	info_label.text = ""
+
+
+func _apply_display_settings() -> void:
+	var cfg := ConfigFile.new()
+	if cfg.load("user://settings.cfg") != OK:
+		return
+	var default_view: String = cfg.get_value("display", "default_view", "card")
+	var music_preview: bool = cfg.get_value("display", "music_preview", true)
+
+	if default_view == "list" and _current_mode == ViewMode.CARD:
+		_on_view_toggle_pressed()
+
+	if not music_preview and _music_player.playing:
+		_music_player.stop()
+		_music_player.stream = null
+		_current_music_data = null
 
 
 func _play_level_music(data: MenuLevelData) -> void:
