@@ -6,6 +6,7 @@
 [ext_resource type="Texture2D" uid="uid://lh5f3b3xfwsd" path="res://pck_levels/inv/inv.png" id="4_ce8ow"]
 [ext_resource type="Script" uid="uid://d3m75qswtqdny" path="res://Scripts/MenuLevelList.gd" id="4_v7aw8"]
 [ext_resource type="AudioStream" uid="uid://yhticobykusw" path="res://pck_levels/inv/TheInvertedWorld.mp3" id="5_v7aw8"]
+[ext_resource type="Texture2D" uid="uid://c4rc47thiqgln" path="res://#Template/[Resources]/Spirit.png" id="6_v7aw8"]
 
 [sub_resource type="Resource" id="Resource_62mh6"]
 script = ExtResource("1_2jgfj")
@@ -35,7 +36,19 @@ music_start = 50.0
 music_duration = 10.0
 metadata/_custom_type_script = "uid://c0ibf0fotopcm"
 
+[sub_resource type="Resource" id="Resource_jdg0n"]
+script = ExtResource("1_2jgfj")
+cover = ExtResource("6_v7aw8")
+music = ExtResource("3_ce8ow")
+title = "Sample"
+author = "meny233"
+scene_path = "#Template/[Scenes]/Sample/Sample.tscn"
+save_id = "sample"
+music_start = 50.0
+music_duration = 10.0
+metadata/_custom_type_script = "uid://c0ibf0fotopcm"
+
 [resource]
 script = ExtResource("4_v7aw8")
-levels = Array[ExtResource("1_2jgfj")]([SubResource("Resource_62mh6"), SubResource("Resource_88gqm")])
+levels = Array[ExtResource("1_2jgfj")]([SubResource("Resource_62mh6"), SubResource("Resource_88gqm"), SubResource("Resource_jdg0n")])
 metadata/_custom_type_script = "uid://c0ibf0fotopcm"
