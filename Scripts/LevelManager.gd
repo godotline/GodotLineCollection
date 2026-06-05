@@ -25,6 +25,8 @@ var _animating: bool = false
 var _default_avatar: ImageTexture
 var _detail_popup: AcceptDialog
 var _import_dialog: FileDialog
+var _pending_download_data: MenuLevelData = null
+var _pending_download_key: String = ""
 
 @onready var refresh_btn: Button = $Margin/VBox/Header/RefreshBtn
 @onready var import_btn: Button = $Margin/VBox/Header/ImportBtn
@@ -60,6 +62,8 @@ func _ready() -> void:
 	_apply_pending_cloud_data()
 	_apply_circle_avatar(avatar_rect)
 	_create_import_dialog()
+	# Pre-fetch remote level URLs from GAS config (non-blocking)
+	_fetch_remote_urls()
 
 
 func _apply_pending_cloud_data() -> void:
@@ -70,6 +74,11 @@ func _apply_pending_cloud_data() -> void:
 	var parsed: JSON = JSON.new()
 	if parsed.parse(pending_json) == OK and parsed.data is Dictionary:
 		apply_save_data(parsed.data)
+
+
+func _fetch_remote_urls() -> void:
+	await PCKDownloader.instance.fetch_level_urls()
+	print("[LevelManager] Remote level URLs loaded: ", PCKDownloader.instance._url_map.size())
 
 
 func _create_view_toggle() -> void:
@@ -508,19 +517,38 @@ func _on_panel_gui_input(event: InputEvent) -> void:
 
 func _start_level() -> void:
 	var data: MenuLevelData = levels[current_index]
-	if data.pck_path.is_empty():
-		info_label.text = "未配置PCK文件"
+	var key: String = data.resource_path if data.resource_path != "" else data.title
+
+	# Already loaded — jump straight to the scene
+	if key in loaded_pcks:
+		var scene: String = data.scene_path
+		if scene.is_empty():
+			info_label.text = "未配置场景路径"
+			return
+		get_tree().change_scene_to_file(scene)
 		return
 
-	var key: String = data.resource_path if data.resource_path != "" else data.title
-	if not key in loaded_pcks:
+	# Determine how to obtain the PCK (local file vs remote download)
+	var local_exists := not data.pck_path.is_empty() and FileAccess.file_exists(ProjectSettings.globalize_path(data.pck_path))
+	var remote_url := PCKDownloader.instance.get_url(data.save_id)
+
+	if local_exists:
 		_load_pck(data.pck_path, key)
+	elif not remote_url.is_empty():
+		# Remote URL available — try cache first, otherwise download
+		if PCKDownloader.instance.is_cached(data.save_id):
+			_load_pck(PCKDownloader.instance.get_cached_path(data.save_id), key)
+		else:
+			_start_remote_download(data, key)
+			return
+	else:
+		info_label.text = "未配置PCK文件"
+		return
 
 	var scene: String = data.scene_path
 	if scene.is_empty():
 		info_label.text = "未配置场景路径"
 		return
-
 	get_tree().change_scene_to_file(scene)
 
 
@@ -705,7 +733,7 @@ func _scan_levels() -> void:
 
 
 func _load_pck(pck_path: String, level_key: String) -> void:
-	var global_path := ProjectSettings.globalize_path(pck_path)
+	var global_path: String = pck_path if pck_path.is_absolute_path() else ProjectSettings.globalize_path(pck_path)
 	if not FileAccess.file_exists(global_path):
 		info_label.text = "PCK文件不存在"
 		return
@@ -714,6 +742,55 @@ func _load_pck(pck_path: String, level_key: String) -> void:
 		loaded_pcks.append(level_key)
 	else:
 		info_label.text = "PCK加载失败"
+
+
+func _start_remote_download(data: MenuLevelData, level_key: String) -> void:
+	_connect_download_signals()
+	_pending_download_data = data
+	_pending_download_key = level_key
+	info_label.text = "下载中..."
+	PCKDownloader.instance.download(data.save_id, PCKDownloader.instance.get_url(data.save_id))
+
+
+func _on_download_progress(save_id: String, percent: float) -> void:
+	info_label.text = "下载中... %d%%" % int(percent)
+
+
+func _on_download_completed(save_id: String, cached_path: String) -> void:
+	_disconnect_download_signals()
+	var data := _pending_download_data
+	var key := _pending_download_key
+	_pending_download_data = null
+	_pending_download_key = ""
+
+	# Load the downloaded PCK
+	var success := ProjectSettings.load_resource_pack(cached_path)
+	if not success:
+		info_label.text = "PCK加载失败"
+		return
+	loaded_pcks.append(key)
+	get_tree().change_scene_to_file(data.scene_path)
+
+
+func _on_download_failed(save_id: String, error: String) -> void:
+	_disconnect_download_signals()
+	_pending_download_data = null
+	_pending_download_key = ""
+	info_label.text = "下载失败: %s，点击重试" % error
+
+
+func _connect_download_signals() -> void:
+	if not PCKDownloader.instance.download_progress.is_connected(_on_download_progress):
+		PCKDownloader.instance.download_progress.connect(_on_download_progress)
+		PCKDownloader.instance.download_completed.connect(_on_download_completed)
+		PCKDownloader.instance.download_failed.connect(_on_download_failed)
+
+
+func _disconnect_download_signals() -> void:
+	if PCKDownloader.instance.download_progress.is_connected(_on_download_progress):
+		PCKDownloader.instance.download_progress.disconnect(_on_download_progress)
+		PCKDownloader.instance.download_completed.disconnect(_on_download_completed)
+		PCKDownloader.instance.download_failed.disconnect(_on_download_failed)
 
 
 func get_save_data() -> Dictionary:

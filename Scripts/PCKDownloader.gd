@@ -1,6 +1,12 @@
 class_name PCKDownloader
 extends RefCounted
 
+## Singleton instance — initialized in _init(), used as PCKDownloader.instance
+static var instance: PCKDownloader
+
+func _init() -> void:
+	instance = self
+
 ## Emitted periodically during download with progress percentage (0-100).
 signal download_progress(save_id: String, percent: float)
 ## Emitted when a download finishes successfully.
