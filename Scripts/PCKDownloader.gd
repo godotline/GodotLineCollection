@@ -16,7 +16,16 @@ signal download_completed(save_id: String, cached_path: String)
 ## Emitted when a download fails for any reason.
 signal download_failed(save_id: String, error: String)
 
-## Cached mapping of save_id -> filename from GAS ConfigService.
+## Resolve the filename from _filename_map entry, supporting both
+## String (legacy) and Dictionary (with "filename" key) formats.
+static func _resolve_filename(entry) -> String:
+	if entry is String:
+		return entry
+	if entry is Dictionary:
+		return entry.get("filename", "")
+	return ""
+
+## Cached mapping of save_id -> filename (String) or {filename, md5} (Dictionary) from GAS ConfigService.
 var _filename_map: Dictionary = {}
 ## Download sources from GAS config: [{"name": "...", "base_url": "..."}, ...]
 var _sources: Array[Dictionary] = []
@@ -109,7 +118,8 @@ func get_url(save_id: String) -> String:
 	"""
 	if _sources.is_empty() or _current_source_index >= _sources.size():
 		return ""
-	var filename: String = _filename_map.get(save_id, "")
+	var entry = _filename_map.get(save_id)
+	var filename := _resolve_filename(entry)
 	if filename.is_empty():
 		return ""
 	var source: Dictionary = _sources[_current_source_index]
@@ -120,6 +130,17 @@ func get_url(save_id: String) -> String:
 	if not base.ends_with("/"):
 		base += "/"
 	return base + filename
+
+
+func get_md5(save_id: String) -> String:
+	"""
+	Look up the expected MD5 hash for a given save_id from the remote config.
+	Returns empty string if not available (integrity check skipped).
+	"""
+	var entry = _filename_map.get(save_id)
+	if entry is Dictionary:
+		return entry.get("md5", "")
+	return ""
 
 
 func has_sources() -> bool:
@@ -243,6 +264,21 @@ func _do_download(save_id: String, url: String) -> void:
 	tree.root.add_child.call_deferred(http)
 	await http.tree_entered
 
+	# Use a Dictionary (reference type) to share state between the closure
+	# and the outer scope.  GDScript 2.0 closures capture value types (bool,
+	# int, float) by value, so `is_done` as a bool would NOT propagate to the
+	# outer scope — the while loop would never exit (the bug we're fixing).
+	var state := {
+		done = false,
+		result = [],
+	}
+
+	http.request_completed.connect(func(_res: int, _code: int, _headers: PackedStringArray, _body: PackedByteArray):
+		state.result = [_res, _code, _headers, _body]
+		state.done = true
+		print("[PCKDownloader] request_completed fired: result=%d, code=%d, body_size=%d" % [_res, _code, _body.size()])
+	)
+
 	# Start the GET request
 	var req_err := http.request(url, [], HTTPClient.METHOD_GET)
 	if req_err != OK:
@@ -253,24 +289,17 @@ func _do_download(save_id: String, url: String) -> void:
 
 	print("[PCKDownloader] Downloading %s from %s" % [save_id, url])
 
-	# Connect to request_completed signal to know when the download finishes
-	var is_done := false
-	var result: Array = []
-
-	http.request_completed.connect(func(_res: int, _code: int, _headers: PackedStringArray, _body: PackedByteArray):
-		result = [_res, _code, _headers, _body]
-		is_done = true
-	)
-
 	# Poll for download progress each frame (with timeout)
 	var start_time := Time.get_ticks_msec()
-	while not is_done:
+	var last_logged_pct := -1
+	while not state.done:
 		if not is_instance_valid(http):
+			print("[PCKDownloader] HTTP node became invalid during download")
 			return
 
 		# Check for timeout
 		if Time.get_ticks_msec() - start_time > DOWNLOAD_TIMEOUT_MS:
-			var error_msg := "Download timed out after %d seconds" % (DOWNLOAD_TIMEOUT_MS / 1000)
+			var error_msg := "Download timed out after %d seconds" % [int(DOWNLOAD_TIMEOUT_MS / 1000.0)]
 			print("[PCKDownloader] ", error_msg)
 			download_failed.emit(save_id, error_msg)
 			_cleanup_download()
@@ -280,17 +309,43 @@ func _do_download(save_id: String, url: String) -> void:
 		var downloaded := http.get_downloaded_bytes()
 
 		if body_size > 0:
+			# Normal case: server sent Content-Length
 			var percent := clampf(float(downloaded) / float(body_size) * 100.0, 0.0, 100.0)
 			download_progress.emit(save_id, percent)
+
+			# Log every ~25% to help diagnose stalls
+			var pct_int := int(percent / 25.0) * 25
+			if pct_int != last_logged_pct:
+				last_logged_pct = pct_int
+				print("[PCKDownloader] %s: %d%% (%d/%d bytes)" % [save_id, int(percent), downloaded, body_size])
+		else:
+			# No Content-Length (chunked / unknown) — emit progress based on downloaded bytes
+			# Use bytes as a pseudo-percent, clamped to 0-100 so the caller always sees movement.
+			var pseudo_pct := clampf(float(downloaded) / 1024.0, 0.0, 99.0)
+			download_progress.emit(save_id, pseudo_pct)
+
+			# Log every 1 MB to show it's still going
+			var mb := downloaded >> 20
+			if mb != last_logged_pct:
+				last_logged_pct = mb
+				print("[PCKDownloader] %s: %d MB downloaded (unknown total)" % [save_id, mb])
 
 		await tree.process_frame
 
 	if not is_instance_valid(http):
+		print("[PCKDownloader] HTTP node became invalid after completion")
 		return
 
-	var result_code: int = result[0]
-	var response_code: int = result[1]
-	var body_bytes: PackedByteArray = result[3]
+	if state.result.size() < 4:
+		var error_msg := "Download completed but result data is incomplete"
+		print("[PCKDownloader] ", error_msg)
+		download_failed.emit(save_id, error_msg)
+		_cleanup_download()
+		return
+
+	var result_code: int = state.result[0]
+	var response_code: int = state.result[1]
+	var body_bytes: PackedByteArray = state.result[3]
 
 	if result_code != HTTPRequest.RESULT_SUCCESS:
 		var error_msg := "Download failed (result=%d, response=%d)" % [result_code, response_code]
@@ -305,6 +360,8 @@ func _do_download(save_id: String, url: String) -> void:
 		download_failed.emit(save_id, error_msg)
 		_cleanup_download()
 		return
+
+	print("[PCKDownloader] Writing %d bytes to %s" % [body_bytes.size(), _download_dest])
 
 	# Write downloaded bytes to the cache file
 	var file := FileAccess.open(_download_dest, FileAccess.WRITE)
