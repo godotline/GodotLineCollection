@@ -76,7 +76,7 @@ func fetch_level_urls() -> Dictionary:
 
 	# Extract download sources
 	if data.has("download_sources") and typeof(data["download_sources"]) == TYPE_ARRAY:
-		_sources = data["download_sources"]
+		_sources = Array[Dictionary](data["download_sources"])
 		print("[PCKDownloader] Loaded %d download source(s)" % _sources.size())
 	else:
 		print("[PCKDownloader] No download_sources in config data")
