@@ -115,7 +115,6 @@ theme_override_constants/separation = 8
 layout_mode = 2
 
 [node name="RefreshBtn" type="Button" parent="Margin/VBox/Header" unique_id=852241015]
-custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 1, 1, 0.85)
 theme_override_font_sizes/font_size = 14
@@ -125,8 +124,7 @@ theme_override_styles/hover = SubResource("StyleBoxFlat_SecBtnHover")
 theme_override_styles/disabled = SubResource("StyleBoxFlat_DisabledBtn")
 text = "刷新"
 
-[node name="ViewToggleBtn" type="Button" parent="Margin/VBox/Header"]
-custom_minimum_size = Vector2(0, 36)
+[node name="ViewToggleBtn" type="Button" parent="Margin/VBox/Header" unique_id=1941577269]
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 1, 1, 0.85)
 theme_override_font_sizes/font_size = 14
@@ -136,8 +134,7 @@ theme_override_styles/hover = SubResource("StyleBoxFlat_SecBtnHover")
 theme_override_styles/disabled = SubResource("StyleBoxFlat_DisabledBtn")
 text = "视图"
 
-[node name="ImportBtn" type="Button" parent="Margin/VBox/Header"]
-custom_minimum_size = Vector2(0, 36)
+[node name="ImportBtn" type="Button" parent="Margin/VBox/Header" unique_id=1040591753]
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 1, 1, 0.85)
 theme_override_font_sizes/font_size = 14
@@ -147,8 +144,7 @@ theme_override_styles/hover = SubResource("StyleBoxFlat_SecBtnHover")
 theme_override_styles/disabled = SubResource("StyleBoxFlat_DisabledBtn")
 text = "导入"
 
-[node name="SettingsBtn" type="Button" parent="Margin/VBox/Header"]
-custom_minimum_size = Vector2(0, 36)
+[node name="SettingsBtn" type="Button" parent="Margin/VBox/Header" unique_id=1555972313]
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 1, 1, 0.85)
 theme_override_font_sizes/font_size = 14
@@ -210,13 +206,11 @@ text = "Guest"
 layout_mode = 2
 size_flags_vertical = 3
 size_flags_stretch_ratio = 3.0
-theme_override_constants/separation = 4
 alignment = 1
 
 [node name="PreviewRow" type="HBoxContainer" parent="Margin/VBox/Preview" unique_id=1486908314]
 layout_mode = 2
 size_flags_vertical = 3
-theme_override_constants/separation = 8
 alignment = 1
 
 [node name="LeftArrow" type="Button" parent="Margin/VBox/Preview/PreviewRow" unique_id=1121263468]
@@ -233,7 +227,6 @@ action_mode = 0
 text = "<"
 
 [node name="PreviewClip" type="Control" parent="Margin/VBox/Preview/PreviewRow" unique_id=45754166]
-clip_contents = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_stretch_ratio = 5.0

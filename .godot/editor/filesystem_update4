@@ -1,2 +1,11 @@
 res://Scripts/LevelManager.gd
 res://Scripts/PCKDownloader.gd
+res://Scripts/ui/settings_panel.gd
+res://Scenes/SettingsPanel.tscn
+res://#Template/[Materials]/MainPlayer.tres
+res://#Template/[Materials]/Diamond.tres
+res://#Template/[Scenes]/Sample/Default.tres
+res://Scripts/circle_avatar.gdshader
+res://Scenes/LevelManager.tscn
+res://pck_levels/level_list.tres
+res://Scripts/rounded_clip.gdshader

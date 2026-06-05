@@ -20,6 +20,7 @@ var _music_player: AudioStreamPlayer
 var _music_tween: Tween
 var _current_music_data: MenuLevelData
 var _music_loop_timer: float = 0.0
+var _music_timer: SceneTreeTimer
 var _is_music_fading: bool = false
 var _animating: bool = false
 var _default_avatar: ImageTexture
@@ -47,6 +48,7 @@ const SLIDE_DUR := 0.3
 const FLY_IN_DUR := 0.5
 
 func _ready() -> void:
+	Engine.time_scale = 1.0
 	_music_player = AudioStreamPlayer.new()
 	_music_player.bus = "Music"
 	add_child(_music_player)
@@ -172,11 +174,12 @@ func _create_panels() -> void:
 	
 	_panel = PanelContainer.new()
 	_panel.add_theme_stylebox_override("panel", style)
+	_panel.clip_children = CLIP_CHILDREN_ONLY
 	_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	
 	_texture = TextureRect.new()
 	_texture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_texture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_texture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	_texture.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_texture.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_texture.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -216,6 +219,10 @@ func _make_panel_style() -> StyleBoxFlat:
 	s.corner_radius_top_right = 14
 	s.corner_radius_bottom_right = 14
 	s.corner_radius_bottom_left = 14
+	s.content_margin_left = 1
+	s.content_margin_top = 1
+	s.content_margin_right = 1
+	s.content_margin_bottom = 1
 	return s
 
 
@@ -245,13 +252,8 @@ func _position_panels() -> void:
 	if preview_clip.size.x < 2:
 		return
 	
-	var clip_size: Vector2 = preview_clip.size
-	# 单个面板占据中间 1/3 宽度并居中
-	var pw: float = clip_size.x / 3.0
-	var h: float = clip_size.y
-	
-	_panel.position = Vector2(pw, 0)
-	_panel.size = Vector2(pw, h)
+	_panel.position = Vector2.ZERO
+	_panel.size = preview_clip.size
 
 
 func _update_display() -> void:
@@ -346,6 +348,7 @@ func _play_level_music(data: MenuLevelData) -> void:
 func _fade_in_music(duration: float) -> void:
 	if _music_tween:
 		_music_tween.kill()
+	_is_music_fading = false
 	_music_tween = create_tween()
 	_music_tween.tween_property(_music_player, "volume_db", 0.0, duration)
 
@@ -373,10 +376,11 @@ func _on_music_fade_out_complete() -> void:
 ## 设置音乐循环
 func _setup_music_loop(data: MenuLevelData) -> void:
 	_music_loop_timer = 0.0
+	if _music_timer and _music_timer.timeout.is_connected(_on_music_segment_end):
+		_music_timer.timeout.disconnect(_on_music_segment_end)
 	if data.music_duration > 0:
-		# 使用计时器在指定时长后淡出并循环
-		var timer := get_tree().create_timer(data.music_duration - data.music_fade_out)
-		timer.timeout.connect(_on_music_segment_end)
+		_music_timer = get_tree().create_timer(data.music_duration - data.music_fade_out)
+		_music_timer.timeout.connect(_on_music_segment_end)
 
 
 ## 音乐片段结束时淡出并循环
