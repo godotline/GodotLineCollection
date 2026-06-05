@@ -540,39 +540,40 @@ func _start_level() -> void:
 	var data: MenuLevelData = levels[current_index]
 	var key: String = data.resource_path if data.resource_path != "" else data.title
 
-	# Already loaded — jump straight to the scene
-	if key in loaded_pcks:
-		var scene: String = data.scene_path
-		if scene.is_empty():
-			info_label.text = "未配置场景路径"
-			return
-		get_tree().change_scene_to_file(scene)
+	# Case 1: Local PCK file
+	var local_path := ProjectSettings.globalize_path(data.pck_path)
+	var local_exists := not data.pck_path.is_empty() and FileAccess.file_exists(local_path)
+	if local_exists:
+		if _verify_and_load_pck(data.pck_path, key, data.save_id):
+			_switch_to_scene(data)
+		elif not PCKDownloader.instance.get_url(data.save_id).is_empty():
+			# Integrity check failed, remote source available → re-download
+			_start_remote_download(data, key)
+		else:
+			# Integrity check failed, no remote source → try loading anyway
+			print("[LevelManager] Local PCK integrity check failed for %s, no remote URL, loading anyway" % data.save_id)
+			if _load_pck(data.pck_path, key):
+				_switch_to_scene(data)
 		return
 
-	# Determine how to obtain the PCK (local file vs remote download)
-	var local_exists := not data.pck_path.is_empty() and FileAccess.file_exists(ProjectSettings.globalize_path(data.pck_path))
+	# Case 2: Cached PCK from remote
 	var remote_url := PCKDownloader.instance.get_url(data.save_id)
-
-	if local_exists:
-		if not _load_pck(data.pck_path, key):
-			return
-	elif not remote_url.is_empty():
-		# Remote URL available — try cache first, otherwise download
+	if not remote_url.is_empty():
 		if PCKDownloader.instance.is_cached(data.save_id):
-			if not _load_pck(PCKDownloader.instance.get_cached_path(data.save_id), key):
-				return
+			var cached_path := PCKDownloader.instance.get_cached_path(data.save_id)
+			if _verify_and_load_pck(cached_path, key, data.save_id):
+				_switch_to_scene(data)
+			else:
+				# Cache corrupted, delete and re-download
+				print("[LevelManager] Cache integrity failed for %s, re-downloading" % data.save_id)
+				DirAccess.remove_absolute(cached_path)
+				_start_remote_download(data, key)
 		else:
 			_start_remote_download(data, key)
-			return
-	else:
-		info_label.text = "未配置PCK文件"
 		return
 
-	var scene: String = data.scene_path
-	if scene.is_empty():
-		info_label.text = "未配置场景路径"
-		return
-	get_tree().change_scene_to_file(scene)
+	# Case 3: No PCK available at all
+	info_label.text = "未配置PCK文件"
 
 
 func _on_info_button() -> void:
@@ -766,6 +767,25 @@ func _load_pck(pck_path: String, level_key: String) -> bool:
 		return true
 	info_label.text = "PCK加载失败"
 	return false
+
+
+## Verify integrity then load PCK. Returns true if loaded successfully.
+func _verify_and_load_pck(pck_path: String, level_key: String, save_id: String) -> bool:
+	if not _verify_pck_integrity(pck_path, save_id):
+		return false
+	if not _load_pck(pck_path, level_key):
+		return false
+	return true
+
+
+## Switch to level scene. Returns false if scene_path is empty.
+func _switch_to_scene(data: MenuLevelData) -> bool:
+	var scene: String = data.scene_path
+	if scene.is_empty():
+		info_label.text = "未配置场景路径"
+		return false
+	get_tree().change_scene_to_file(scene)
+	return true
 
 
 func _start_remote_download(data: MenuLevelData, level_key: String) -> void:
