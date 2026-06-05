@@ -101,7 +101,10 @@ func _create_import_dialog() -> void:
 
 
 func _on_settings_pressed() -> void:
-	var panel := preload("res://Scenes/SettingsPanel.tscn").instantiate()
+	var panel_scene := load("res://Scenes/SettingsPanel.tscn") as PackedScene
+	if panel_scene == null:
+		return
+	var panel := panel_scene.instantiate()
 	add_child(panel)
 	panel.settings_closed.connect(panel.queue_free)
 
