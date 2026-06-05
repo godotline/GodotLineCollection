@@ -104,12 +104,11 @@ func _create_import_dialog() -> void:
 
 
 func _update_source_label() -> void:
-	if PCKDownloader.instance.has_sources():
-		var name := PCKDownloader.instance.get_source_name(PCKDownloader.instance.get_source_index())
-		settings_btn.text = "源:" + name
-		settings_btn.visible = true
+	var name := PCKDownloader.instance.get_source_name(PCKDownloader.instance.get_source_index())
+	if name.is_empty():
+		settings_btn.text = "源"
 	else:
-		settings_btn.visible = false
+		settings_btn.text = "源:" + name
 
 
 func _on_settings_pressed() -> void:
