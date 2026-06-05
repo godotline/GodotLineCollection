@@ -30,7 +30,6 @@ var _pending_download_key: String = ""
 
 @onready var refresh_btn: Button = $Margin/VBox/Header/RefreshBtn
 @onready var import_btn: Button = $Margin/VBox/Header/ImportBtn
-@onready var settings_btn: Button = $Margin/VBox/Header/SettingsBtn
 
 enum ViewMode { CARD, LIST }
 var _current_mode: ViewMode = ViewMode.CARD
