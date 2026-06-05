@@ -18,6 +18,7 @@ var _downloading_save_id: String = ""
 var _download_dest: String = ""
 
 const CACHE_DIR: String = "user://pck_cache/"
+const DOWNLOAD_TIMEOUT_MS := 120_000
 
 
 func fetch_level_urls() -> Dictionary:
@@ -107,6 +108,13 @@ func _do_download(save_id: String, url: String) -> void:
 	# Cancel any existing download first
 	cancel_download()
 
+	# Validate URL
+	if url.is_empty() or not (url.begins_with("http://") or url.begins_with("https://")):
+		var error_msg := "Invalid download URL: " + url
+		print("[PCKDownloader] ", error_msg)
+		download_failed.emit(save_id, error_msg)
+		return
+
 	_downloading_save_id = save_id
 	_download_dest = get_cached_path(save_id)
 
@@ -153,9 +161,18 @@ func _do_download(save_id: String, url: String) -> void:
 		is_done = true
 	)
 
-	# Poll for download progress each frame
+	# Poll for download progress each frame (with timeout)
+	var start_time := Time.get_ticks_msec()
 	while not is_done:
 		if not is_instance_valid(http):
+			return
+
+		# Check for timeout
+		if Time.get_ticks_msec() - start_time > DOWNLOAD_TIMEOUT_MS:
+			var error_msg := "Download timed out after %d seconds" % (DOWNLOAD_TIMEOUT_MS / 1000)
+			print("[PCKDownloader] ", error_msg)
+			download_failed.emit(save_id, error_msg)
+			_cleanup_download()
 			return
 
 		var body_size := http.get_body_size()
@@ -176,6 +193,13 @@ func _do_download(save_id: String, url: String) -> void:
 
 	if result_code != HTTPRequest.RESULT_SUCCESS:
 		var error_msg := "Download failed (result=%d, response=%d)" % [result_code, response_code]
+		print("[PCKDownloader] ", error_msg)
+		download_failed.emit(save_id, error_msg)
+		_cleanup_download()
+		return
+
+	if response_code != 200:
+		var error_msg := "Download failed: HTTP %d" % response_code
 		print("[PCKDownloader] ", error_msg)
 		download_failed.emit(save_id, error_msg)
 		_cleanup_download()
