@@ -6,6 +6,7 @@ static var instance: PCKDownloader
 
 func _init() -> void:
 	instance = self
+	_restore_source()
 
 ## Emitted periodically during download with progress percentage (0-100).
 signal download_progress(save_id: String, percent: float)
@@ -14,8 +15,12 @@ signal download_completed(save_id: String, cached_path: String)
 ## Emitted when a download fails for any reason.
 signal download_failed(save_id: String, error: String)
 
-## Cached mapping of save_id -> download_url from GAS ConfigService.
-var _url_map: Dictionary = {}
+## Cached mapping of save_id -> filename from GAS ConfigService.
+var _filename_map: Dictionary = {}
+## Download sources from GAS config: [{"name": "...", "base_url": "..."}, ...]
+var _sources: Array[Dictionary] = []
+## Index of the currently selected download source.
+var _current_source_index: int = 0
 ## Active HTTPRequest node, null when idle.
 var _http: HTTPRequest = null
 ## The save_id currently being downloaded (empty when idle).
@@ -24,52 +29,124 @@ var _downloading_save_id: String = ""
 var _download_dest: String = ""
 
 const CACHE_DIR: String = "user://pck_cache/"
+const SOURCE_CFG_PATH: String = "user://download_source.cfg"
 const DOWNLOAD_TIMEOUT_MS := 120_000
 
 
 func fetch_level_urls() -> Dictionary:
 	"""
-	Fetch remote config via ConfigService and cache the level_urls mapping.
-	Returns _url_map (empty on failure).
+	Fetch remote config via ConfigService and cache the level_urls
+	and download_sources mappings.
+	Returns _filename_map (empty on failure).
 	"""
-	_url_map.clear()
+	_filename_map.clear()
+	_sources.clear()
 
 	var config_service := ConfigService.new()
 	var resp = await config_service.get_config()
 
 	if resp is GASError:
 		print("[PCKDownloader] ConfigService returned error: ", resp.message)
-		return _url_map
+		return _filename_map
 
 	if not resp.is_success():
 		print("[PCKDownloader] Config fetch unsuccessful, code: ", resp.code)
-		return _url_map
+		return _filename_map
 
 	var data = resp.data
 	if typeof(data) != TYPE_DICTIONARY:
 		print("[PCKDownloader] Config data is not a Dictionary")
-		return _url_map
+		return _filename_map
 
+	# Extract download sources
+	if data.has("download_sources") and typeof(data["download_sources"]) == TYPE_ARRAY:
+		_sources = data["download_sources"]
+		print("[PCKDownloader] Loaded %d download source(s)" % _sources.size())
+	else:
+		print("[PCKDownloader] No download_sources in config data")
+
+	# Extract level filenames
 	if not data.has("level_urls"):
 		print("[PCKDownloader] No level_urls key in config data")
-		return _url_map
+		return _filename_map
 
 	var level_urls = data["level_urls"]
 	if typeof(level_urls) != TYPE_DICTIONARY:
 		print("[PCKDownloader] level_urls is not a Dictionary, got: ", typeof(level_urls))
-		return _url_map
+		return _filename_map
 
-	_url_map = level_urls
-	print("[PCKDownloader] Loaded %d level URL(s)" % _url_map.size())
-	return _url_map
+	_filename_map = level_urls
+	print("[PCKDownloader] Loaded %d level filename(s)" % _filename_map.size())
+
+	# Clamp source index after reload (sources may have changed)
+	_current_source_index = clamp(_current_source_index, 0, max(0, _sources.size() - 1))
+	return _filename_map
 
 
 func get_url(save_id: String) -> String:
 	"""
-	Look up the download URL for a given save_id.
-	Returns empty string if not found.
+	Look up the full download URL for a given save_id by concatenating
+	the current source's base_url with the level's filename.
+	Returns empty string if not found or no source selected.
 	"""
-	return _url_map.get(save_id, "")
+	if _sources.is_empty() or _current_source_index >= _sources.size():
+		return ""
+	var filename: String = _filename_map.get(save_id, "")
+	if filename.is_empty():
+		return ""
+	var source: Dictionary = _sources[_current_source_index]
+	var base: String = source.get("base_url", "")
+	if base.is_empty():
+		return ""
+	# Ensure base_url ends with /
+	if not base.ends_with("/"):
+		base += "/"
+	return base + filename
+
+
+func has_sources() -> bool:
+	return not _sources.is_empty()
+
+
+func get_source_count() -> int:
+	return _sources.size()
+
+
+func get_source_name(index: int) -> String:
+	if index < 0 or index >= _sources.size():
+		return ""
+	return _sources[index].get("name", "源 %d" % (index + 1))
+
+
+func get_level_count() -> int:
+	return _filename_map.size()
+
+
+func get_source_index() -> int:
+	return _current_source_index
+
+
+func set_source(index: int) -> void:
+	if index < 0 or index >= _sources.size():
+		return
+	if index == _current_source_index:
+		return
+	_current_source_index = index
+	_save_source()
+	print("[PCKDownloader] Switched to download source: ", get_source_name(index))
+
+
+func _save_source() -> void:
+	var cfg := ConfigFile.new()
+	cfg.set_value("download", "source_index", _current_source_index)
+	cfg.save(SOURCE_CFG_PATH)
+
+
+func _restore_source() -> void:
+	var cfg := ConfigFile.new()
+	if cfg.load(SOURCE_CFG_PATH) == OK:
+		_current_source_index = cfg.get_value("download", "source_index", 0)
+		print("[PCKDownloader] Restored source index: ", _current_source_index)
 
 
 func is_cached(save_id: String) -> bool:

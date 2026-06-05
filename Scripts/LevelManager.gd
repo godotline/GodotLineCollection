@@ -25,6 +25,8 @@ var _animating: bool = false
 var _default_avatar: ImageTexture
 var _detail_popup: AcceptDialog
 var _import_dialog: FileDialog
+var _settings_btn: Button
+var _source_label: Label
 var _pending_download_data: MenuLevelData = null
 var _pending_download_key: String = ""
 
@@ -62,6 +64,7 @@ func _ready() -> void:
 	_apply_pending_cloud_data()
 	_apply_circle_avatar(avatar_rect)
 	_create_import_dialog()
+	_create_settings_button()
 	# Pre-fetch remote level URLs from GAS config (non-blocking)
 	_fetch_remote_urls()
 
@@ -78,7 +81,10 @@ func _apply_pending_cloud_data() -> void:
 
 func _fetch_remote_urls() -> void:
 	await PCKDownloader.instance.fetch_level_urls()
-	print("[LevelManager] Remote level URLs loaded: ", PCKDownloader.instance._url_map.size())
+	print("[LevelManager] Remote level URLs loaded: ", PCKDownloader.instance.get_level_count())
+	# Restore settings button state if download sources are available
+	if PCKDownloader.instance.has_sources():
+		_update_source_label()
 
 
 func _create_view_toggle() -> void:
@@ -112,6 +118,73 @@ func _create_import_dialog() -> void:
 		_import_dialog.use_native_dialog = true
 
 	add_child(_import_dialog)
+
+
+func _create_settings_button() -> void:
+	_settings_btn = Button.new()
+	_settings_btn.text = "下载源"
+	_settings_btn.custom_minimum_size = Vector2(80, 36)
+	_settings_btn.add_theme_font_size_override("font_size", 14)
+
+	var style := refresh_btn.get_theme_stylebox("normal")
+	var hover := refresh_btn.get_theme_stylebox("hover")
+	_settings_btn.add_theme_stylebox_override("normal", style)
+	_settings_btn.add_theme_stylebox_override("hover", hover)
+	_settings_btn.add_theme_stylebox_override("pressed", style)
+	_settings_btn.pressed.connect(_on_settings_pressed)
+
+	$Margin/VBox/Header.add_child(_settings_btn)
+	$Margin/VBox/Header.move_child(_settings_btn, 1)  # 放在刷新按钮旁边
+
+	# Label to show current source
+	_source_label = Label.new()
+	_source_label.add_theme_font_size_override("font_size", 11)
+	_source_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	$Margin/VBox/Header.add_child(_source_label)
+	_update_source_label()
+
+
+func _update_source_label() -> void:
+	if _source_label and PCKDownloader.instance.has_sources():
+		_source_label.text = PCKDownloader.instance.get_source_name(PCKDownloader.instance.get_source_index())
+		_source_label.visible = true
+		_settings_btn.visible = true
+	elif _source_label:
+		_source_label.visible = false
+		_settings_btn.visible = false
+
+
+func _on_settings_pressed() -> void:
+	if not PCKDownloader.instance.has_sources():
+		return
+
+	var popup := AcceptDialog.new()
+	popup.title = "选择下载源"
+	popup.size = Vector2i(400, 200)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 8)
+
+	var group := ButtonGroup.new()
+	var current_idx := PCKDownloader.instance.get_source_index()
+
+	for i in range(PCKDownloader.instance.get_source_count()):
+		var radio := CheckButton.new()
+		radio.text = PCKDownloader.instance.get_source_name(i)
+		radio.button_group = group
+		radio.button_pressed = (i == current_idx)
+		radio.pressed.connect(_on_source_selected.bind(i, popup))
+		vbox.add_child(radio)
+
+	popup.add_child(vbox)
+	add_child(popup)
+	popup.popup_centered()
+
+
+func _on_source_selected(index: int, popup: AcceptDialog) -> void:
+	PCKDownloader.instance.set_source(index)
+	_update_source_label()
+	popup.queue_free()
 
 
 func _validate_pck(pck_global_path: String) -> Dictionary:
@@ -794,7 +867,7 @@ func _on_download_failed(save_id: String, error: String) -> void:
 	_disconnect_download_signals()
 	_pending_download_data = null
 	_pending_download_key = ""
-	info_label.text = "下载失败: %s，点击重试" % error
+	info_label.text = "下载失败: %s，请在设置中切换下载源后重试" % error
 
 
 func _connect_download_signals() -> void:
