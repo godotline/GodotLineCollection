@@ -827,6 +827,48 @@ func _disconnect_download_signals() -> void:
 		PCKDownloader.instance.download_failed.disconnect(_on_download_failed)
 
 
+## Compute MD5 hex digest of a file at the given absolute path.
+## Uses HashingContext with 64KB chunked reading.
+## Returns empty string on error.
+static func _compute_file_md5(path: String) -> String:
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		push_error("PCK MD5: failed to open ", path)
+		return ""
+	var ctx := HashingContext.new()
+	ctx.start(HashingContext.HASH_MD5)
+	while file.get_position() < file.get_length():
+		ctx.update(file.get_buffer(1 << 16))  # 64 KB chunks
+	var hash_bytes := ctx.finish()
+	file.close()
+	var hex := PackedStringArray()
+	for b in hash_bytes:
+		hex.append("%02x" % b)
+	return "".join(hex)
+
+
+## Verify PCK file integrity against remote configuration.
+## Returns true if: no MD5 configured (skip), or MD5 matches.
+## Returns false if MD5 is configured but doesn't match.
+func _verify_pck_integrity(pck_path: String, save_id: String) -> bool:
+	var expected_md5 := PCKDownloader.instance.get_md5(save_id)
+	if expected_md5.is_empty():
+		return true  # No remote MD5 configured, skip check
+
+	var global_path := pck_path if pck_path.is_absolute_path() else ProjectSettings.globalize_path(pck_path)
+	if not FileAccess.file_exists(global_path):
+		return false
+
+	var actual_md5 := _compute_file_md5(global_path)
+	if actual_md5.is_empty():
+		return false
+
+	var match := actual_md5.to_lower() == expected_md5.to_lower()
+	if not match:
+		print("[LevelManager] Integrity check FAILED for %s: expected %s, got %s" % [save_id, expected_md5, actual_md5])
+	return match
+
+
 func get_save_data() -> Dictionary:
 	return {
 		"level_progress": ProgressStore.to_dict(),
