@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la *.tres)",
+      "Bash(ls -la default_*.tres)",
+      "Bash(ls -la default*.tres)",
+      "Bash(ls -la project.godot)",
+      "Bash(grep -n \"bus_layout\\\\|default_bus\" project.godot)",
+      "Bash(grep -n \"audio\" project.godot)"
+    ]
+  }
+}

@@ -72,9 +72,9 @@ func _ready() -> void:
 	_scan_levels()
 	_update_display()
 	_update_user_display()
-	
+
 	UserManager.user_info_updated.connect(_update_user_display)
-	
+
 	_apply_pending_cloud_data()
 	_apply_circle_avatar(avatar_rect)
 	_create_import_dialog()
@@ -83,6 +83,18 @@ func _ready() -> void:
 	PCKDownloader.ensure_instance()
 	# Pre-fetch remote level URLs from GAS config (non-blocking)
 	_fetch_remote_urls()
+
+	if OS.has_feature("web"):
+		print("[LevelManager] Web platform, viewport: ", get_viewport_rect().size)
+		print("[LevelManager] levels=", levels.size(), " idx=", current_index)
+		print("[LevelManager] LoadingUI visible=", _loading_ui.visible)
+		print("[LevelManager] VerificationUI visible=", _verification_ui.visible)
+		# Hide non-functional buttons on web
+		import_btn.visible = false
+		refresh_btn.visible = false
+		await get_tree().process_frame
+		print("[LevelManager] Frame 1 done, root visible=", visible)
+		print("[LevelManager] BG color=", $BG.color, " size=", $BG.size)
 
 
 func _apply_pending_cloud_data() -> void:
@@ -110,6 +122,8 @@ func _notification(what: int) -> void:
 
 
 func _create_import_dialog() -> void:
+	if OS.has_feature("web"):
+		return
 	_import_dialog = FileDialog.new()
 	_import_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
 	_import_dialog.access = FileDialog.ACCESS_FILESYSTEM
@@ -648,6 +662,8 @@ func _on_refresh_button_pressed() -> void:
 
 
 func _on_import_pck_pressed() -> void:
+	if _import_dialog == null:
+		return
 	_import_dialog.popup_centered()
 
 

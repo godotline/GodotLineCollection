@@ -1,8 +1,7 @@
 72322a848ab928aa5c89f0cb78209805
-::res://::1780754099
+::res://::1780787809
 CLAUDE.md::TextFile::-1::1779499209::0::1::::<><><>0<>0<><>::
 export_presets.cfg::TextFile::-1::1780217352::0::1::::<><><>0<>0<><>::
-pck_manager.cfg::TextFile::-1::1777908815::0::1::::<><><>0<>0<><>::
 README.md::TextFile::-1::1779499116::0::1::::<><><>0<>0<><>::
 ::res://#Template/::1780214139
 CameraRoot.tscn::PackedScene::2728329579423999755::1780214139::0::1::::<><><>0<>0<><>::uid://bcrha75txrw31::::res://#Template/[Scripts]/CameraScripts/CameraFollower.gd

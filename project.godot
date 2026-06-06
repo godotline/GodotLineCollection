@@ -31,11 +31,13 @@ shapes/collision/shape_color=Color(0, 0.6, 0.69803923, 1)
 
 [display]
 
+window/size/viewport_width=1152
+window/size/viewport_height=648
 window/stretch/mode="canvas_items"
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/minimize_html_build/plugin.cfg", "res://addons/ugc_import/plugin.cfg")
+enabled=PackedStringArray("res://addons/ugc_import/plugin.cfg")
 
 [input]
 
