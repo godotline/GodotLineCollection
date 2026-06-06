@@ -32,8 +32,10 @@ author = "meny233"
 description = "meny233"
 scene_path = "#Template/[Scenes]/DefaultScene/Inv.tscn"
 save_id = "inv"
-music_start = 50.0
+music_start = 60.0
 music_duration = 10.0
+music_fade_in = 0.0
+music_fade_out = 0.0
 metadata/_custom_type_script = "uid://c0ibf0fotopcm"
 
 [sub_resource type="Resource" id="Resource_jdg0n"]

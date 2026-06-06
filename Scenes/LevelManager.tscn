@@ -39,12 +39,14 @@ corner_radius_top_right = 20
 corner_radius_bottom_right = 20
 corner_radius_bottom_left = 20
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ArrowBtn"]
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ZoneNormal"]
 bg_color = Color(0, 0, 0, 0)
-corner_radius_top_left = 30
-corner_radius_top_right = 30
-corner_radius_bottom_right = 30
-corner_radius_bottom_left = 30
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ZonePressed"]
+bg_color = Color(0, 0, 0, 0)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ZoneHover"]
+bg_color = Color(0, 0, 0, 0)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_YellowBtn"]
 bg_color = Color(0.92, 0.7, 0.03, 0.9)
@@ -208,41 +210,73 @@ size_flags_vertical = 3
 size_flags_stretch_ratio = 3.0
 alignment = 1
 
-[node name="PreviewRow" type="HBoxContainer" parent="Margin/VBox/Preview" unique_id=1486908314]
+[node name="PreviewRow" type="Control" parent="Margin/VBox/Preview" unique_id=1486908314]
 layout_mode = 2
 size_flags_vertical = 3
-alignment = 1
-
-[node name="LeftArrow" type="Button" parent="Margin/VBox/Preview/PreviewRow" unique_id=1121263468]
-custom_minimum_size = Vector2(50, 50)
-layout_mode = 2
-size_flags_vertical = 4
-theme_override_colors/font_color = Color(1, 1, 1, 0.45)
-theme_override_colors/font_hover_color = Color(1, 1, 1, 0.8)
-theme_override_font_sizes/font_size = 28
-theme_override_styles/normal = SubResource("StyleBoxFlat_ArrowBtn")
-theme_override_styles/pressed = SubResource("StyleBoxFlat_ArrowBtn")
-theme_override_styles/hover = SubResource("StyleBoxFlat_ArrowBtn")
-action_mode = 0
-text = "<"
 
 [node name="PreviewClip" type="Control" parent="Margin/VBox/Preview/PreviewRow" unique_id=45754166]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_stretch_ratio = 5.0
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="LeftArrow" type="Button" parent="Margin/VBox/Preview/PreviewRow" unique_id=1121263468]
+layout_mode = 1
+anchors_preset = -1
+anchor_right = 0.33
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/normal = SubResource("StyleBoxFlat_ZoneNormal")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_ZonePressed")
+theme_override_styles/hover = SubResource("StyleBoxFlat_ZoneHover")
+action_mode = 0
 
 [node name="RightArrow" type="Button" parent="Margin/VBox/Preview/PreviewRow" unique_id=1739859733]
-custom_minimum_size = Vector2(50, 50)
-layout_mode = 2
-size_flags_vertical = 4
-theme_override_colors/font_color = Color(1, 1, 1, 0.45)
-theme_override_colors/font_hover_color = Color(1, 1, 1, 0.8)
-theme_override_font_sizes/font_size = 28
-theme_override_styles/normal = SubResource("StyleBoxFlat_ArrowBtn")
-theme_override_styles/pressed = SubResource("StyleBoxFlat_ArrowBtn")
-theme_override_styles/hover = SubResource("StyleBoxFlat_ArrowBtn")
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.67
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/normal = SubResource("StyleBoxFlat_ZoneNormal")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_ZonePressed")
+theme_override_styles/hover = SubResource("StyleBoxFlat_ZoneHover")
 action_mode = 0
+
+[node name="LeftArrowLabel" type="Label" parent="Margin/VBox/Preview/PreviewRow" unique_id=222748564]
+layout_mode = 1
+anchors_preset = 4
+anchor_top = 0.5
+anchor_bottom = 0.5
+offset_left = 12.0
+offset_top = -22.5
+offset_right = 36.0
+offset_bottom = 22.5
+grow_vertical = 2
+theme_override_colors/font_color = Color(1, 1, 1, 0.55)
+theme_override_font_sizes/font_size = 32
+text = "<"
+
+[node name="RightArrowLabel" type="Label" parent="Margin/VBox/Preview/PreviewRow" unique_id=809543768]
+layout_mode = 1
+anchors_preset = 14
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = -36.0
+offset_top = -22.5
+offset_right = -12.0
+offset_bottom = 22.5
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(1, 1, 1, 0.55)
+theme_override_font_sizes/font_size = 32
 text = ">"
+horizontal_alignment = 2
 
 [node name="CounterLabel" type="Label" parent="Margin/VBox/Preview" unique_id=1863213579]
 layout_mode = 2
