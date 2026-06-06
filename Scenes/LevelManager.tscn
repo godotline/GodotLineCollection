@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" uid="uid://cpaaiifmq0gjy" path="res://Scripts/LevelManager.gd" id="1"]
 [ext_resource type="Script" uid="uid://c1r7lpve8anvh" path="res://Scripts/ui/floating_bubbles.gd" id="2"]
+[ext_resource type="Script" path="res://Scripts/ui/loading_spinner.gd" id="3"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_SecBtn"]
 bg_color = Color(0.15, 0.15, 0.22, 0.7)
@@ -344,6 +345,72 @@ theme_override_styles/normal = SubResource("StyleBoxFlat_SecBtn")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_SecBtn")
 theme_override_styles/hover = SubResource("StyleBoxFlat_SecBtnHover")
 text = "刷新列表"
+
+[node name="VerificationUI" type="ColorRect" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0, 0, 0, 0.65)
+
+[node name="Center" type="CenterContainer" parent="VerificationUI"]
+layout_mode = 1
+anchors_preset = 8
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="VerificationUI/Center"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Spinner" type="Control" parent="VerificationUI/Center/VBox"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+script = ExtResource("3")
+
+[node name="Label" type="Label" parent="VerificationUI/Center/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 0.9)
+theme_override_font_sizes/font_size = 18
+text = "正在校验关卡"
+horizontal_alignment = 1
+
+[node name="LoadingUI" type="ColorRect" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0, 0, 0, 1)
+
+[node name="CoverTexture" type="TextureRect" parent="LoadingUI"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+expand_mode = 2
+stretch_mode = 5
+
+[node name="NameLabel" type="Label" parent="LoadingUI"]
+layout_mode = 1
+anchors_preset = 13
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_bottom = -20.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 22
 
 [connection signal="pressed" from="Margin/VBox/Header/RefreshBtn" to="." method="_on_refresh_button_pressed"]
 [connection signal="pressed" from="Margin/VBox/Header/ViewToggleBtn" to="." method="_on_view_toggle_pressed"]

@@ -39,6 +39,21 @@ var _current_mode: ViewMode = ViewMode.CARD
 var _list_view: ScrollContainer
 var _list_container: VBoxContainer
 
+@onready var _verification_ui: ColorRect = $VerificationUI
+@onready var _loading_ui: ColorRect = $LoadingUI
+@onready var _cover_texture: TextureRect = $LoadingUI/CoverTexture
+@onready var _name_label: Label = $LoadingUI/NameLabel
+
+enum LoadPhase { IDLE, VERIFY_PCK, LOAD_PCK, LOAD_SCENE, FADE_OUT }
+var _load_phase: LoadPhase = LoadPhase.IDLE
+var _load_data: MenuLevelData = null
+var _load_key: String = ""
+var _load_pck_path: String = ""
+
+var _verify_thread: Thread
+var _verify_busy: bool = false
+var _pending_scene_path: String = ""
+
 var _slide_wrap: Control
 var _panel: PanelContainer
 var _texture: TextureRect
@@ -84,6 +99,15 @@ func _fetch_remote_urls() -> void:
 	await PCKDownloader.instance.fetch_level_urls()
 	print("[LevelManager] Remote level URLs loaded: ", PCKDownloader.instance.get_level_count())
 	pass
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		if _verify_busy and _verify_thread != null:
+			_verify_busy = false
+			_verify_thread.wait_to_finish()
+			_verify_thread = null
+
 
 func _create_import_dialog() -> void:
 	_import_dialog = FileDialog.new()
@@ -406,6 +430,13 @@ func _process(delta: float) -> void:
 				if _current_music_data:
 					_play_level_music(_current_music_data)
 
+	# 加载状态轮询
+	match _load_phase:
+		LoadPhase.VERIFY_PCK:
+			_poll_verify()
+		LoadPhase.LOAD_SCENE:
+			_poll_scene_load()
+
 
 func _on_view_toggle_pressed() -> void:
 	if _animating:
@@ -530,44 +561,28 @@ func _start_level() -> void:
 	if _pending_download_data != null:
 		info_label.text = "正在下载中，请稍候..."
 		return
+	if _load_phase != LoadPhase.IDLE:
+		return
 
 	var data: MenuLevelData = levels[current_index]
 	var key: String = data.resource_path if data.resource_path != "" else data.title
 
-	# Case 1: Local PCK file
-	var local_path := ProjectSettings.globalize_path(data.pck_path)
-	var local_exists := not data.pck_path.is_empty() and FileAccess.file_exists(local_path)
-	if local_exists:
-		if _verify_and_load_pck(data.pck_path, key, data.save_id):
-			_switch_to_scene(data)
-		elif not PCKDownloader.instance.get_url(data.save_id).is_empty():
-			# Integrity check failed, remote source available → re-download
+	# Find PCK file (local path or cached)
+	var pck_path: String = _resolve_pck_path(data)
+	if pck_path.is_empty() and PCKDownloader.instance.is_cached(data.save_id):
+		pck_path = PCKDownloader.instance.get_cached_path(data.save_id)
+
+	if pck_path.is_empty():
+		# No local/cached PCK file, check remote
+		var remote_url := PCKDownloader.instance.get_url(data.save_id)
+		if not remote_url.is_empty():
 			_start_remote_download(data, key)
 		else:
-			# Integrity check failed, no remote source → try loading anyway
-			print("[LevelManager] Local PCK integrity check failed for %s, no remote URL, loading anyway" % data.save_id)
-			if _load_pck(data.pck_path, key):
-				_switch_to_scene(data)
+			info_label.text = "未配置PCK文件"
 		return
 
-	# Case 2: Cached PCK from remote
-	var remote_url := PCKDownloader.instance.get_url(data.save_id)
-	if not remote_url.is_empty():
-		if PCKDownloader.instance.is_cached(data.save_id):
-			var cached_path := PCKDownloader.instance.get_cached_path(data.save_id)
-			if _verify_and_load_pck(cached_path, key, data.save_id):
-				_switch_to_scene(data)
-			else:
-				# Cache corrupted, delete and re-download
-				print("[LevelManager] Cache integrity failed for %s, re-downloading" % data.save_id)
-				DirAccess.remove_absolute(cached_path)
-				_start_remote_download(data, key)
-		else:
-			_start_remote_download(data, key)
-		return
-
-	# Case 3: No PCK available at all
-	info_label.text = "未配置PCK文件"
+	# Start async loading flow
+	_start_loading_flow(data, key, pck_path)
 
 
 func _on_info_button() -> void:
@@ -769,16 +784,7 @@ func _load_pck(pck_path: String, level_key: String) -> bool:
 	return false
 
 
-## Verify integrity then load PCK. Returns true if loaded successfully.
-func _verify_and_load_pck(pck_path: String, level_key: String, save_id: String) -> bool:
-	if not _verify_pck_integrity(pck_path, save_id):
-		return false
-	if not _load_pck(pck_path, level_key):
-		return false
-	return true
-
-
-## Switch to level scene. Returns false if scene_path is empty.
+## Switch to level scene (used by import PCK flow). Returns false if scene_path is empty.
 func _switch_to_scene(data: MenuLevelData) -> bool:
 	var scene: String = data.scene_path
 	if scene.is_empty():
@@ -788,6 +794,175 @@ func _switch_to_scene(data: MenuLevelData) -> bool:
 	print('[LevelManager] _switch_to_scene: switching to "%s" (title: %s)' % [scene, data.title])
 	get_tree().call_deferred("change_scene_to_file", scene)
 	return true
+
+
+# ============================================================================
+# 异步加载流程
+# ============================================================================
+
+## 解析 PCK 文件路径（本地路径）
+func _resolve_pck_path(data: MenuLevelData) -> String:
+	var local_path := ProjectSettings.globalize_path(data.pck_path)
+	if not data.pck_path.is_empty() and FileAccess.file_exists(local_path):
+		return data.pck_path
+	return ""
+
+
+## 开始异步加载流程(显示校验 UI -> 后台 MD5 -> 加载 UI -> 异步场景 -> 渐变切换)
+func _start_loading_flow(data: MenuLevelData, key: String, pck_path: String) -> void:
+	_load_data = data
+	_load_key = key
+	_load_pck_path = pck_path
+	_show_verification_ui()
+	var expected_md5 := PCKDownloader.instance.get_md5(data.save_id)
+	if expected_md5.is_empty():
+		_proceed_to_load()
+	else:
+		_load_phase = LoadPhase.VERIFY_PCK
+		_start_verify(pck_path, expected_md5)
+
+
+## 在后台线程启动 MD5 校验
+func _start_verify(pck_path: String, expected_md5: String) -> void:
+	_verify_busy = true
+	_verify_thread = Thread.new()
+	_verify_thread.start(_verify_worker.bind(pck_path, expected_md5))
+
+
+## 后台线程工作函数
+static func _verify_worker(pck_path: String, expected_md5: String) -> Dictionary:
+	var actual_md5 := _compute_file_md5(pck_path)
+	if actual_md5.is_empty():
+		return {"ok": false, "md5": "", "pck_path": pck_path}
+	var ok := actual_md5.to_lower() == expected_md5.to_lower()
+	return {"ok": ok, "md5": actual_md5, "pck_path": pck_path}
+
+
+## 轮询后台验证线程(由 _process 调用)
+func _poll_verify() -> void:
+	if not _verify_busy:
+		return
+	if _verify_thread.is_alive():
+		return
+	_verify_busy = false
+	var result: Dictionary = _verify_thread.wait_to_finish()
+	_verify_thread = null
+	if result.ok:
+		_proceed_to_load()
+	else:
+		_on_verify_failed()
+
+
+## 验证失败 -> 重新下载或直接加载
+func _on_verify_failed() -> void:
+	var data := _load_data
+	var remote_url := PCKDownloader.instance.get_url(data.save_id)
+	if not remote_url.is_empty():
+		_cleanup_loading()
+		if PCKDownloader.instance.is_cached(data.save_id):
+			var cached_path := PCKDownloader.instance.get_cached_path(data.save_id)
+			if not cached_path.is_empty():
+				DirAccess.remove_absolute(cached_path)
+		_start_remote_download(data, _load_key)
+	else:
+		print("[LevelManager] Integrity check failed for %s, no remote URL, loading anyway" % data.save_id)
+		_proceed_to_load()
+
+
+## 验证通过或跳过: 显示加载封面 -> 加载 PCK -> 异步加载场景
+func _proceed_to_load() -> void:
+	_hide_verification_ui()
+	_show_loading_ui(_load_data)
+	_load_phase = LoadPhase.LOAD_PCK
+	call_deferred("_perform_pck_load")
+
+
+## 执行 PCK 加载(同步阻塞, 但 UI 已渲染)
+func _perform_pck_load() -> void:
+	if _load_phase != LoadPhase.LOAD_PCK:
+		return
+	if not _load_pck(_load_pck_path, _load_key):
+		_cleanup_loading()
+		info_label.text = "PCK加载失败"
+		return
+	_start_async_scene_load(_load_data.scene_path)
+
+
+## 显示校验界面
+func _show_verification_ui() -> void:
+	_verification_ui.visible = true
+
+
+## 隐藏校验界面
+func _hide_verification_ui() -> void:
+	_verification_ui.visible = false
+
+
+## 显示加载界面(全屏封面 + 左下角关卡名)
+func _show_loading_ui(data: MenuLevelData) -> void:
+	_cover_texture.texture = data.cover if data.cover != null else null
+	_name_label.text = data.title if data.title != "" else "未命名关卡"
+	_loading_ui.modulate.a = 1.0
+	_loading_ui.visible = true
+
+
+## 隐藏加载界面
+func _hide_loading_ui() -> void:
+	_loading_ui.visible = false
+
+
+## 异步线程加载场景(不阻塞主线程)
+func _start_async_scene_load(scene_path: String) -> void:
+	if scene_path.is_empty():
+		_cleanup_loading()
+		info_label.text = "未配置场景路径"
+		return
+	print('[LevelManager] Starting async scene load: "%s"' % scene_path)
+	ResourceLoader.load_threaded_request(scene_path)
+	_pending_scene_path = scene_path
+	_load_phase = LoadPhase.LOAD_SCENE
+
+
+## 轮询异步场景加载进度(由 _process 调用)
+func _poll_scene_load() -> void:
+	var progress: Array = []
+	var status := ResourceLoader.load_threaded_get_status(_pending_scene_path, progress)
+	match status:
+		ResourceLoader.THREAD_LOAD_LOADED:
+			var packed_scene := ResourceLoader.load_threaded_get(_pending_scene_path)
+			_on_scene_ready(packed_scene)
+		ResourceLoader.THREAD_LOAD_FAILED:
+			_cleanup_loading()
+			info_label.text = "场景加载失败"
+
+
+## 场景加载完成: 渐变消失 LoadingUI -> 切换到关卡
+func _on_scene_ready(packed_scene: PackedScene) -> void:
+	_load_phase = LoadPhase.FADE_OUT
+	print('[LevelManager] Scene loaded, fading out loading UI')
+	var tw := create_tween()
+	tw.tween_property(_loading_ui, "modulate:a", 0.0, 0.5)
+	await tw.finished
+	_loading_ui.visible = false
+	_cleanup_loading()
+	get_tree().change_scene_to_packed(packed_scene)
+
+
+## 清理加载状态
+func _cleanup_loading() -> void:
+	_load_phase = LoadPhase.IDLE
+	_load_data = null
+	_load_key = ""
+	_load_pck_path = ""
+	_pending_scene_path = ""
+	_verification_ui.visible = false
+	_loading_ui.visible = false
+	_loading_ui.modulate.a = 1.0
+	if _verify_busy:
+		_verify_busy = false
+		if _verify_thread != null:
+			_verify_thread.wait_to_finish()
+			_verify_thread = null
 
 
 func _start_remote_download(data: MenuLevelData, level_key: String) -> void:
@@ -814,32 +989,8 @@ func _on_download_completed(save_id: String, cached_path: String) -> void:
 		print("[LevelManager] Download completed for unexpected save_id: ", save_id)
 		return
 
-	# Verify downloaded file integrity
-	var expected_md5 := PCKDownloader.instance.get_md5(save_id)
-	if not expected_md5.is_empty():
-		var actual_md5 := _compute_file_md5(cached_path)
-		if actual_md5.to_lower() != expected_md5.to_lower():
-			print("[LevelManager] Downloaded PCK integrity check FAILED for %s" % save_id)
-			DirAccess.remove_absolute(cached_path)
-			info_label.text = "文件完整性校验失败，请联系管理员"
-			return
-
-	# Load the downloaded PCK
-	print('[LevelManager] Loading downloaded PCK: "%s" (save_id: %s)' % [cached_path, save_id])
-	var success := ProjectSettings.load_resource_pack(cached_path)
-	if not success:
-		print('[LevelManager] FAILED to load downloaded PCK: "%s"' % cached_path)
-		info_label.text = "PCK加载失败"
-		return
-	loaded_pcks.append(key)
-
-	var scene: String = data.scene_path
-	if scene.is_empty():
-		print("[LevelManager] Downloaded PCK loaded but scene_path is empty")
-		info_label.text = "未配置场景路径"
-		return
-	print('[LevelManager] Downloaded PCK loaded, switching to scene: "%s"' % scene)
-	get_tree().call_deferred("change_scene_to_file", scene)
+	# Start loading flow with the cached PCK (includes background verify + loading UI)
+	_start_loading_flow(data, key, cached_path)
 
 
 func _on_download_failed(save_id: String, error: String) -> void:
