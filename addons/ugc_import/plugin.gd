@@ -523,21 +523,13 @@ func _find_level_data_in_pck(pck_dir: RefCounted, paths: Array) -> Dictionary:
 			break
 
 	if best_dir.is_empty():
-		for p in paths:
-			var p_str: String = str(p).trim_suffix(".remap")
-			if p_str.ends_with(".tscn"):
-				best_dir = "unknown"
-				best_scene_path = p_str.trim_suffix(".remap")
-				break
-	else:
-		for p in paths:
-			var p_str: String = str(p).trim_suffix(".remap")
-			if p_str.contains("[Scenes]/%s/" % best_dir) and p_str.ends_with(".tscn"):
-				best_scene_path = p_str
-				break
-
-	if best_dir.is_empty():
 		return {}
+
+	for p in paths:
+		var p_str: String = str(p).trim_suffix(".remap")
+		if p_str.contains("[Scenes]/%s/" % best_dir) and p_str.ends_with(".tscn"):
+			best_scene_path = p_str
+			break
 
 	var tres_path := _find_tres_in_dir(paths, best_dir)
 	var save_id_str := ""

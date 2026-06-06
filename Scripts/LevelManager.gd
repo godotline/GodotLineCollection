@@ -149,12 +149,6 @@ func _find_level_scene(paths: Array[String]) -> Dictionary:
 			break
 
 	if best_dir.is_empty():
-		for p in paths:
-			var clean: String = p.trim_suffix(".remap")
-			if clean.ends_with(".tscn"):
-				return {"scene_path": clean, "name": "unknown"}
-
-	if best_dir.is_empty():
 		return {}
 
 	for p in paths:
@@ -657,15 +651,18 @@ func _on_pck_file_selected(path: String) -> void:
 	var scene_path: String = result["scene_path"]
 	var level_name: String = result["name"]
 
+	print('[LevelManager] Importing PCK: "%s" -> scene: "%s"' % [path, scene_path])
+
 	var success := ProjectSettings.load_resource_pack(path)
 	if not success:
+		print('[LevelManager] FAILED to load PCK: "%s"' % path)
 		info_label.text = "PCK加载失败"
 		return
 
 	loaded_pcks.append(path)
+	print('[LevelManager] PCK loaded successfully, switching to scene: "%s"' % scene_path)
 	info_label.text = "正在加载: %s" % level_name
-	get_tree().change_scene_to_file(scene_path)
-
+	get_tree().call_deferred("change_scene_to_file", scene_path)
 
 func _copy_content_uri(uri: String) -> String:
 	# Copy SAF content:// URI to local cache using Godot's FileAccess
@@ -744,7 +741,7 @@ func _apply_circle_avatar(rect: TextureRect) -> void:
 
 func _on_user_capsule_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		get_tree().change_scene_to_file("res://Scenes/gas_login.tscn")
+		get_tree().call_deferred("change_scene_to_file", "res://Scenes/gas_login.tscn")
 
 
 func _scan_levels() -> void:
@@ -759,12 +756,15 @@ func _scan_levels() -> void:
 func _load_pck(pck_path: String, level_key: String) -> bool:
 	var global_path: String = pck_path if pck_path.is_absolute_path() else ProjectSettings.globalize_path(pck_path)
 	if not FileAccess.file_exists(global_path):
+		print("[LevelManager] _load_pck: PCK file does not exist: %s" % global_path)
 		info_label.text = "PCK文件不存在"
 		return false
 	var success := ProjectSettings.load_resource_pack(global_path)
 	if success:
+		print('[LevelManager] _load_pck: loaded PCK "%s" (key: %s)' % [global_path, level_key])
 		loaded_pcks.append(level_key)
 		return true
+	print("[LevelManager] _load_pck: FAILED to load PCK: %s" % global_path)
 	info_label.text = "PCK加载失败"
 	return false
 
@@ -782,9 +782,11 @@ func _verify_and_load_pck(pck_path: String, level_key: String, save_id: String) 
 func _switch_to_scene(data: MenuLevelData) -> bool:
 	var scene: String = data.scene_path
 	if scene.is_empty():
+		print("[LevelManager] _switch_to_scene: scene_path is empty")
 		info_label.text = "未配置场景路径"
 		return false
-	get_tree().change_scene_to_file(scene)
+	print('[LevelManager] _switch_to_scene: switching to "%s" (title: %s)' % [scene, data.title])
+	get_tree().call_deferred("change_scene_to_file", scene)
 	return true
 
 
@@ -823,17 +825,21 @@ func _on_download_completed(save_id: String, cached_path: String) -> void:
 			return
 
 	# Load the downloaded PCK
+	print('[LevelManager] Loading downloaded PCK: "%s" (save_id: %s)' % [cached_path, save_id])
 	var success := ProjectSettings.load_resource_pack(cached_path)
 	if not success:
+		print('[LevelManager] FAILED to load downloaded PCK: "%s"' % cached_path)
 		info_label.text = "PCK加载失败"
 		return
 	loaded_pcks.append(key)
 
 	var scene: String = data.scene_path
 	if scene.is_empty():
+		print("[LevelManager] Downloaded PCK loaded but scene_path is empty")
 		info_label.text = "未配置场景路径"
 		return
-	get_tree().change_scene_to_file(scene)
+	print('[LevelManager] Downloaded PCK loaded, switching to scene: "%s"' % scene)
+	get_tree().call_deferred("change_scene_to_file", scene)
 
 
 func _on_download_failed(save_id: String, error: String) -> void:
