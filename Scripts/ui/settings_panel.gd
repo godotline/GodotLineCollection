@@ -90,7 +90,11 @@ func _scan_cache() -> void:
 	var file_name := dir.get_next()
 	while file_name != "":
 		if file_name != "." and file_name != ".." and not dir.current_is_dir():
-			total_size += dir.current_file_size
+			var file_path := cache_dir.path_join(file_name)
+			var f := FileAccess.open(file_path, FileAccess.READ)
+			if f:
+				total_size += f.get_length()
+				f.close()
 			count += 1
 		file_name = dir.get_next()
 	dir.list_dir_end()
