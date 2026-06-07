@@ -1,0 +1,56 @@
+[gd_scene format=3 uid="uid://dyj10wx6tnqh4"]
+
+[ext_resource type="Script" uid="uid://bhp3vyywox1pi" path="res://Scripts/ui/custom_load_screen.gd" id="1"]
+[ext_resource type="Script" uid="uid://66vhgtl788o" path="res://Scripts/ui/loading_spinner.gd" id="2"]
+
+[node name="CustomLoadScreen" type="CanvasLayer" unique_id=1861170409]
+script = ExtResource("1")
+
+[node name="FadeContainer" type="ColorRect" parent="." unique_id=405603225]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0, 0, 0, 0.85)
+
+[node name="Margin" type="MarginContainer" parent="FadeContainer" unique_id=668775404]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 64
+theme_override_constants/margin_top = 32
+theme_override_constants/margin_right = 64
+theme_override_constants/margin_bottom = 32
+
+[node name="VBox" type="VBoxContainer" parent="FadeContainer/Margin" unique_id=104901442]
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+theme_override_constants/separation = 16
+
+[node name="CoverTexture" type="TextureRect" parent="FadeContainer/Margin/VBox" unique_id=497076040]
+custom_minimum_size = Vector2(400, 300)
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 0
+expand_mode = 1
+stretch_mode = 5
+
+[node name="NameLabel" type="Label" parent="FadeContainer/Margin/VBox" unique_id=853286717]
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_colors/font_color = Color(1, 1, 1, 0.9)
+theme_override_font_sizes/font_size = 20
+horizontal_alignment = 1
+
+[node name="Spinner" type="Control" parent="FadeContainer/Margin/VBox" unique_id=823272989]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 0
+script = ExtResource("2")

@@ -40,11 +40,8 @@ var _list_view: ScrollContainer
 var _list_container: VBoxContainer
 
 @onready var _verification_ui: ColorRect = $VerificationUI
-@onready var _loading_ui: ColorRect = $LoadingUI
-@onready var _cover_texture: TextureRect = $LoadingUI/CoverTexture
-@onready var _name_label: Label = $LoadingUI/NameLabel
 
-enum LoadPhase { IDLE, VERIFY_PCK, LOAD_PCK, LOAD_SCENE, FADE_OUT }
+enum LoadPhase { IDLE, VERIFY_PCK, LOAD_PCK }
 var _load_phase: LoadPhase = LoadPhase.IDLE
 var _load_data: MenuLevelData = null
 var _load_key: String = ""
@@ -52,7 +49,6 @@ var _load_pck_path: String = ""
 
 var _verify_thread: Thread
 var _verify_busy: bool = false
-var _pending_scene_path: String = ""
 
 var _slide_wrap: Control
 var _panel: PanelContainer
@@ -417,7 +413,7 @@ func _on_music_segment_end() -> void:
 		_play_level_music(_current_music_data)
 
 
-func _process(delta: float) -> void:
+func _process(_delta: float) -> void:
 	# 检查音乐是否播放到结尾（用于没有指定时长的情况）
 	if _current_music_data and _current_music_data.music_duration <= 0:
 		if _music_player.playing and not _is_music_fading:
@@ -434,8 +430,6 @@ func _process(delta: float) -> void:
 	match _load_phase:
 		LoadPhase.VERIFY_PCK:
 			_poll_verify()
-		LoadPhase.LOAD_SCENE:
-			_poll_scene_load()
 
 
 func _on_view_toggle_pressed() -> void:
@@ -869,15 +863,14 @@ func _on_verify_failed() -> void:
 		_proceed_to_load()
 
 
-## 验证通过或跳过: 显示加载封面 -> 加载 PCK -> 异步加载场景
+## 验证通过或跳过: 加载 PCK -> LongSceneManager 跨场景过渡
 func _proceed_to_load() -> void:
 	_hide_verification_ui()
-	_show_loading_ui(_load_data)
 	_load_phase = LoadPhase.LOAD_PCK
 	call_deferred("_perform_pck_load")
 
 
-## 执行 PCK 加载(同步阻塞, 但 UI 已渲染)
+## 执行 PCK 加载(同步), 然后交 LongSceneManager 处理场景切换+淡入淡出
 func _perform_pck_load() -> void:
 	if _load_phase != LoadPhase.LOAD_PCK:
 		return
@@ -885,7 +878,16 @@ func _perform_pck_load() -> void:
 		_cleanup_loading()
 		info_label.text = "PCK加载失败"
 		return
-	_start_async_scene_load(_load_data.scene_path)
+
+	# PCK 加载成功 → 隐藏验证 UI → 交给 LSM 做跨场景过渡
+	_verification_ui.visible = false
+	var scene_path := _load_data.scene_path
+	CustomLoadScreen.pending_cover = _load_data.cover
+	CustomLoadScreen.pending_title = _load_data.title
+	_cleanup_loading()
+	LongSceneManager.switch_scene(scene_path,
+		LongSceneManager.LoadMethod.DIRECT, false,
+		"res://Scenes/CustomLoadScreen.tscn")
 
 
 ## 显示校验界面
@@ -898,66 +900,13 @@ func _hide_verification_ui() -> void:
 	_verification_ui.visible = false
 
 
-## 显示加载界面(全屏封面 + 左下角关卡名)
-func _show_loading_ui(data: MenuLevelData) -> void:
-	_cover_texture.texture = data.cover if data.cover != null else null
-	_name_label.text = data.title if data.title != "" else "未命名关卡"
-	_loading_ui.modulate.a = 1.0
-	_loading_ui.visible = true
-
-
-## 隐藏加载界面
-func _hide_loading_ui() -> void:
-	_loading_ui.visible = false
-
-
-## 异步线程加载场景(不阻塞主线程)
-func _start_async_scene_load(scene_path: String) -> void:
-	if scene_path.is_empty():
-		_cleanup_loading()
-		info_label.text = "未配置场景路径"
-		return
-	print('[LevelManager] Starting async scene load: "%s"' % scene_path)
-	ResourceLoader.load_threaded_request(scene_path)
-	_pending_scene_path = scene_path
-	_load_phase = LoadPhase.LOAD_SCENE
-
-
-## 轮询异步场景加载进度(由 _process 调用)
-func _poll_scene_load() -> void:
-	var progress: Array = []
-	var status := ResourceLoader.load_threaded_get_status(_pending_scene_path, progress)
-	match status:
-		ResourceLoader.THREAD_LOAD_LOADED:
-			var packed_scene := ResourceLoader.load_threaded_get(_pending_scene_path)
-			_on_scene_ready(packed_scene)
-		ResourceLoader.THREAD_LOAD_FAILED:
-			_cleanup_loading()
-			info_label.text = "场景加载失败"
-
-
-## 场景加载完成: 渐变消失 LoadingUI -> 切换到关卡
-func _on_scene_ready(packed_scene: PackedScene) -> void:
-	_load_phase = LoadPhase.FADE_OUT
-	print('[LevelManager] Scene loaded, fading out loading UI')
-	var tw := create_tween()
-	tw.tween_property(_loading_ui, "modulate:a", 0.0, 0.5)
-	await tw.finished
-	_loading_ui.visible = false
-	_cleanup_loading()
-	get_tree().change_scene_to_packed(packed_scene)
-
-
 ## 清理加载状态
 func _cleanup_loading() -> void:
 	_load_phase = LoadPhase.IDLE
 	_load_data = null
 	_load_key = ""
 	_load_pck_path = ""
-	_pending_scene_path = ""
 	_verification_ui.visible = false
-	_loading_ui.visible = false
-	_loading_ui.modulate.a = 1.0
 	if _verify_busy:
 		_verify_busy = false
 		if _verify_thread != null:

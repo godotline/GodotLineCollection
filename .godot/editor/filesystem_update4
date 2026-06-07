@@ -1,0 +1,6 @@
+res://Scripts/LevelManager.gd
+res://Scenes/LevelManager.tscn
+res://Scripts/circle_avatar.gdshader
+res://Scripts/rounded_clip.gdshader
+res://Scripts/ui/custom_load_screen.gd
+res://Scenes/CustomLoadScreen.tscn
