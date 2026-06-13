@@ -17,6 +17,7 @@ warnings/check_invalid_track_paths=false
 config/name="GodotLineCollection"
 run/main_scene="uid://4b0fo58iyn6m"
 config/features=PackedStringArray("4.6")
+config/icon="res://icon.png"
 boot_splash/show_image=false
 
 [autoload]
@@ -26,6 +27,8 @@ CloudArchiveService="*res://Scripts/gas/cloud_archive_service.gd"
 UserManager="*res://Scripts/UserManager.gd"
 LongSceneManager="*uid://b1wsglrtdrf6d"
 ImGuiRoot="*uid://dugmpnsxaagba"
+PopupToast="*res://Scripts/PopupToast.gd"
+ImGuiDebug="*res://Scripts/ImGuiDebug.gd"
 
 [debug]
 

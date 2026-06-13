@@ -1,6 +1,10 @@
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/meny2333/godot-line)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/meny2333/GodotLineCollection)
 
+<p align="center">
+  <img src="icon.png" alt="GodotLineCollection" width="200">
+</p>
+
 # GodotLineCollection
 
 Godot 4.6 游戏关卡集合/启动器。通过 PCK 文件动态加载用户关卡，使用 GAS SDK 云端存档。
