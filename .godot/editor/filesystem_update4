@@ -1,6 +1,4 @@
-res://Scripts/LevelManager.gd
-res://Scenes/LevelManager.tscn
+res://addons/imgui-godot/data/ImGuiRoot.tscn
 res://Scripts/circle_avatar.gdshader
 res://Scripts/rounded_clip.gdshader
-res://Scripts/ui/custom_load_screen.gd
-res://Scenes/CustomLoadScreen.tscn
+res://Scenes/LevelManager.tscn
