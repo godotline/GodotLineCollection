@@ -123,6 +123,7 @@ func _save_progress() -> void:
 		return
 	var save_id: int = p.level_data.saveID
 	print("[CustomGameUI] saving progress: save_id=%d crown=%d percent=%d diamond=%d" % [save_id, LevelManager.crown, LevelManager.percent, LevelManager.diamond])
+	PopupToast.show("正在保存游戏进度...", 2.0)
 	ProgressStore.update_level(str(save_id), LevelManager.crown, LevelManager.percent, LevelManager.diamond)
 	CloudArchiveService.queue_save("game_progress")
 

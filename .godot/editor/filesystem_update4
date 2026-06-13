@@ -4,3 +4,5 @@ res://Scripts/rounded_clip.gdshader
 res://Scenes/LevelManager.tscn
 res://Scripts/PopupToast.gd
 res://Scripts/ImGuiDebug.gd
+res://Scripts/UserManager.gd
+res://Scripts/gas/cloud_archive_service.gd

@@ -50,9 +50,12 @@ func _try_auto_login() -> void:
 		return
 	
 	btn_login.disabled = true
+	status_label.text = "正在尝试自动登录..."
+	PopupToast.show("正在尝试自动登录...", 2.0)
 	var resp = await _auto_login.auto_login(_config.email, _config.access_token)
 	if resp is GASError:
 		status_label.text = "自动登录失败，请重新登录"
+		PopupToast.show("自动登录失败，请重新登录", 3.0)
 		btn_login.disabled = false
 		return
 	
@@ -62,6 +65,7 @@ func _try_auto_login() -> void:
 	var profile_resp = await _profile.get_profile(_email, _access_token)
 	if profile_resp is GASError:
 		status_label.text = "自动登录失败，请重新登录"
+		PopupToast.show("自动登录失败，请重新登录", 3.0)
 		btn_login.disabled = false
 		return
 	
@@ -71,19 +75,23 @@ func _try_auto_login() -> void:
 func _on_login() -> void:
 	if _app_token == "" or _app_id == 0:
 		status_label.text = "请先在 GASConfig.tres 中设置 app_id 和 app_token"
+		PopupToast.show("请先在 GASConfig.tres 中设置 app_id 和 app_token", 3.0)
 		return
 	
 	btn_login.disabled = true
 	status_label.text = "请求 auth_token ..."
+	PopupToast.show("正在请求授权令牌...", 2.0)
 	
 	var resp = await _oauth.get_auth_token()
 	if resp is GASError:
 		status_label.text = "错误：%s" % resp.message
+		PopupToast.show("授权请求失败：%s" % resp.message, 3.0)
 		btn_login.disabled = false
 		return
 	
 	_auth_token = str(resp.data.get("auth_token", ""))
 	status_label.text = "已在浏览器打开授权页面，请授权后回到游戏"
+	PopupToast.show("已在浏览器打开授权页面，请授权后回到游戏", 3.0)
 	
 	GASBrowserHandler.open_auth_browser(_app_id, _auth_token)
 	_poll_auth(_auth_token)
@@ -95,6 +103,7 @@ func _poll_auth(auth_token: String) -> void:
 	
 	for i in range(1, max_retry + 1):
 		status_label.text = "OAuth 回调轮询第 %d/%d 次..." % [i, max_retry]
+		PopupToast.show("OAuth 回调轮询第 %d/%d 次..." % [i, max_retry], 1.5)
 		
 		var resp = await _oauth.exchange_auth_token(auth_token)
 		if resp is GASError:
@@ -117,6 +126,7 @@ func _poll_auth(auth_token: String) -> void:
 		await Engine.get_main_loop().create_timer(interval_sec).timeout
 	
 	status_label.text = "授权超时，请重试"
+	PopupToast.show("授权超时，请重试", 3.0)
 	btn_login.disabled = false
 
 
@@ -134,6 +144,7 @@ func _on_login_success(data: Dictionary) -> void:
 	
 	user_info.visible = true
 	status_label.text = "登录成功"
+	PopupToast.show("登录成功！", 2.0)
 	btn_login.visible = false
 	
 	CloudArchiveService.set_credentials(_email, _access_token)

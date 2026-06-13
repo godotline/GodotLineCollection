@@ -30,9 +30,9 @@ func show(message: String, duration: float = 2.0) -> void:
 	_canvas_layer.add_child(toast)
 	_active_toasts.append(toast)
 
-	# 限制最大 toast 数量
+	# 限制最大 toast 数量：立即弹出行首，动画退出
 	while _active_toasts.size() > MAX_TOASTS:
-		_remove_toast(_active_toasts[0])
+		_begin_exit(_active_toasts.pop_front())
 
 	# 等待一帧让 panel 完成 sizing，然后从右侧滑入
 	await get_tree().process_frame
@@ -76,6 +76,10 @@ func _create_toast(message: String) -> PanelContainer:
 
 
 func _animate_in(panel: PanelContainer, duration: float) -> void:
+	# 可能已被 overflow 触发的 _begin_exit 标记退场
+	if not is_instance_valid(panel) or panel.has_meta("_exiting"):
+		return
+
 	var viewport_w := get_viewport().get_visible_rect().size.x
 
 	# 计算 y 偏移（panel 此时已经在 _active_toasts 中，取其索引）
@@ -99,6 +103,13 @@ func _animate_in(panel: PanelContainer, duration: float) -> void:
 
 
 func _begin_exit(panel) -> void:
+	# 防止重复调用：已释放 / 已标记退场中 / 从未开始入场动画
+	if not is_instance_valid(panel):
+		return
+	if panel.has_meta("_exiting"):
+		return
+	panel.set_meta("_exiting", true)
+
 	var viewport_w := get_viewport().get_visible_rect().size.x
 	# 滑出到屏幕右侧外
 	var target_x := viewport_w + 50
@@ -111,9 +122,17 @@ func _begin_exit(panel) -> void:
 
 
 ## 移除 toast 并重新排列其余
-## 注意：参数不写类型，避免 tween_callback 的类型转换报错
+## 用手动循环替代 find()，避免 TypedArray 对已释放对象的校验报错
 func _remove_toast(toast) -> void:
-	_active_toasts.erase(toast)
+	# 查找索引（手动循环，兼容已释放的对象）
+	var idx := -1
+	for i in range(_active_toasts.size()):
+		if _active_toasts[i] == toast:
+			idx = i
+			break
+	if idx >= 0:
+		_active_toasts.remove_at(idx)
+
 	if is_instance_valid(toast):
 		toast.queue_free()
 	_reposition_toasts()

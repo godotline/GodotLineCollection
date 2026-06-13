@@ -33,12 +33,15 @@ func has_credentials() -> bool:
 func sync_on_login() -> void:
 	if not _has_credentials:
 		push_warning("[CloudArchiveService] No credentials set")
+		PopupToast.show("未登录，无法同步存档", 3.0)
 		sync_complete.emit(false)
 		return
 	
+	PopupToast.show("正在同步云端存档...", 2.0)
 	var resp = await _archive_service.read(_email, _access_token)
 	if resp is GASError:
 		push_warning("[CloudArchiveService] Read failed: %s" % resp.message)
+		PopupToast.show("云端存档读取失败：%s" % resp.message, 3.0)
 		sync_complete.emit(false)
 		return
 	
@@ -48,6 +51,7 @@ func sync_on_login() -> void:
 	
 	if cloud_content == "" or cloud_content == "null":
 		print("[CloudArchiveService] cloud is empty, uploading local")
+		PopupToast.show("云端无存档，正在上传本地存档...", 2.0)
 		queue_save("first_upload")
 		sync_complete.emit(true)
 		return
@@ -73,12 +77,15 @@ func sync_on_login() -> void:
 	
 	if local_time == "" or cloud_time > local_time:
 		print("[CloudArchiveService] applying cloud data")
+		PopupToast.show("正在应用云端存档...", 2.0)
 		_adapter.apply_cloud_json(decrypted)
 		if _pending_cloud_json != "":
 			print("[CloudArchiveService] pending cloud data stored for menu scene")
+		PopupToast.show("云端存档同步完成", 2.0)
 		sync_complete.emit(true)
 	else:
 		print("[CloudArchiveService] local is newer, uploading")
+		PopupToast.show("本地存档较新，正在上传...", 2.0)
 		queue_save("local_newer")
 		sync_complete.emit(true)
 
@@ -99,13 +106,16 @@ func _on_save_timer_timeout() -> void:
 		return
 	var content: String = _adapter.to_cloud_json()
 	print("[CloudArchiveService] saving to cloud: ", content)
+	PopupToast.show("正在保存到云端...", 2.0)
 	var version: String = ProjectSettings.get_setting("application/config/version")
 	if version.is_empty():
 		version = "1.0.0"
 	var resp = await _archive_service.save(_email, _access_token, version, content)
 	if resp is GASError:
 		push_error("[CloudArchiveService] Save failed: %s" % resp.message)
+		PopupToast.show("云端保存失败：%s" % resp.message, 3.0)
 	else:
 		var update_time: String = str(resp.data.get("update_time", ""))
 		print("[CloudArchiveService] Cloud save successful, update_time: ", update_time)
+		PopupToast.show("云端保存成功", 2.0)
 		save_completed.emit(update_time)

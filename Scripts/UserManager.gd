@@ -14,6 +14,7 @@ func set_user_info(nickname: String, avatar_url: String, email: String) -> void:
 	user_email = email
 	
 	if avatar_url != "":
+		PopupToast.show("正在加载用户头像...", 2.0)
 		_load_avatar(avatar_url)
 	else:
 		user_info_updated.emit()
@@ -24,6 +25,7 @@ func _load_avatar(url: String) -> void:
 	var err := http.request(url)
 	if err != OK:
 		http.queue_free()
+		PopupToast.show("头像加载失败", 3.0)
 		user_info_updated.emit()
 		return
 	
@@ -48,6 +50,11 @@ func _load_avatar(url: String) -> void:
 		if load_err == OK:
 			image.resize(64, 64)
 			user_avatar_texture = ImageTexture.create_from_image(image)
+			PopupToast.show("头像加载成功", 1.5)
+		else:
+			PopupToast.show("头像解码失败", 3.0)
+	else:
+		PopupToast.show("头像下载失败（HTTP %d）" % result_code, 3.0)
 	
 	http.queue_free()
 	user_info_updated.emit()
