@@ -41,6 +41,22 @@ var _list_container: VBoxContainer
 
 @onready var _verification_ui: ColorRect = $VerificationUI
 
+var _energy: int = 10
+var _energy_label: Label
+var _ad_overlay: Control
+var _ad_player: VLCMediaPlayer
+var _ad_media: VLCMedia
+var _ad_skip_btn: Button
+var _ad_skip_timer: Timer
+var _ad_reward_pending: bool = false
+var _ad_music_muted: bool = false
+var _ad_urls: Array[String] = []
+var _ad_http: HTTPRequest
+var _ad_downloading: bool = false
+
+const AD_LIST_URL := "https://gitee.com/des24k/DLCEADSlib/raw/master/CNads.txt"
+const AD_CACHE_DIR := "user://ad_cache"
+const ENERGY_SAVE_PATH := "user://energy.save"
 enum LoadPhase { IDLE, VERIFY_PCK, LOAD_PCK }
 var _load_phase: LoadPhase = LoadPhase.IDLE
 var _load_data: MenuLevelData = null
@@ -79,6 +95,10 @@ func _ready() -> void:
 	PCKDownloader.ensure_instance()
 	# Pre-fetch remote level URLs from GAS config (non-blocking)
 	_fetch_remote_urls()
+	_load_energy()
+	_create_energy_ui()
+	_create_ad_overlay()
+	_fetch_ad_list()
 
 
 func _apply_pending_cloud_data() -> void:
@@ -885,9 +905,18 @@ func _perform_pck_load() -> void:
 	CustomLoadScreen.pending_cover = _load_data.cover
 	CustomLoadScreen.pending_title = _load_data.title
 	_cleanup_loading()
+	_sync_long_scene_manager_current_scene()
 	LongSceneManager.switch_scene(scene_path,
 		LongSceneManager.LoadMethod.DIRECT, false,
 		"res://Scenes/CustomLoadScreen.tscn")
+
+
+func _sync_long_scene_manager_current_scene() -> void:
+	var tree := get_tree()
+	if tree == null or tree.current_scene == null:
+		return
+	LongSceneManager.current_scene = tree.current_scene
+	LongSceneManager.current_scene_path = tree.current_scene.scene_file_path
 
 
 ## 显示校验界面
@@ -1021,3 +1050,299 @@ func apply_save_data(data: Dictionary) -> void:
 	else:
 		print("[LevelManager] no level_progress key in data")
 	_update_display()
+
+
+# ============================================================================
+# 消耗品系统 (能量 / 代币)
+# ============================================================================
+
+func _load_energy() -> void:
+	var file := FileAccess.open(ENERGY_SAVE_PATH, FileAccess.READ)
+	if file != null:
+		_energy = file.get_32()
+		file.close()
+	else:
+		_energy = 10
+		_save_energy()
+
+
+func _save_energy() -> void:
+	var file := FileAccess.open(ENERGY_SAVE_PATH, FileAccess.WRITE)
+	if file != null:
+		file.store_32(_energy)
+		file.close()
+
+
+func _consume_energy() -> bool:
+	if _energy <= 0:
+		return false
+	_energy -= 1
+	_save_energy()
+	_update_energy_display()
+	return true
+
+
+func _add_energy(amount: int) -> void:
+	_energy += amount
+	_save_energy()
+	_update_energy_display()
+
+
+func _update_energy_display() -> void:
+	if _energy_label:
+		_energy_label.text = "💎 %d" % _energy
+
+
+func _create_energy_ui() -> void:
+	var header: HBoxContainer = $Margin/VBox/Header
+
+	_energy_label = Label.new()
+	_energy_label.text = "💎 %d" % _energy
+	_energy_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3, 1.0))
+	_energy_label.add_theme_font_size_override("font_size", 15)
+	header.add_child(_energy_label)
+	header.move_child(_energy_label, 4)
+
+	var watch_ad_btn := Button.new()
+	watch_ad_btn.text = "🎬 看广告"
+	watch_ad_btn.tooltip_text = "观看广告获得10个代币"
+	watch_ad_btn.custom_minimum_size = Vector2(100, 0)
+	var ad_style := StyleBoxFlat.new()
+	ad_style.bg_color = Color(0.95, 0.25, 0.15, 0.95)
+	ad_style.corner_radius_top_left = 20
+	ad_style.corner_radius_top_right = 20
+	ad_style.corner_radius_bottom_right = 20
+	ad_style.corner_radius_bottom_left = 20
+	ad_style.border_width_left = 2
+	ad_style.border_width_top = 2
+	ad_style.border_width_right = 2
+	ad_style.border_width_bottom = 2
+	ad_style.border_color = Color(1.0, 0.5, 0.2, 0.8)
+	var ad_hover := ad_style.duplicate()
+	ad_hover.bg_color = Color(1.0, 0.35, 0.2, 1.0)
+	ad_hover.border_color = Color(1.0, 0.7, 0.4, 1.0)
+	watch_ad_btn.add_theme_stylebox_override("normal", ad_style)
+	watch_ad_btn.add_theme_stylebox_override("hover", ad_hover)
+	watch_ad_btn.add_theme_stylebox_override("pressed", ad_hover)
+	watch_ad_btn.add_theme_color_override("font_color", Color(1, 1, 1, 1))
+	watch_ad_btn.add_theme_font_size_override("font_size", 13)
+	watch_ad_btn.pressed.connect(_on_watch_ad_pressed)
+	header.add_child(watch_ad_btn)
+	header.move_child(watch_ad_btn, 5)
+
+	_start_ad_btn_pulse(watch_ad_btn)
+
+
+func _start_ad_btn_pulse(btn: Button) -> void:
+	if not is_instance_valid(btn):
+		return
+	var tw := create_tween()
+	tw.set_loops()
+	tw.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tw.tween_property(btn, "scale", Vector2(1.05, 1.05), 0.8)
+	tw.tween_property(btn, "scale", Vector2(1.0, 1.0), 0.8)
+	var tw2 := create_tween()
+	tw2.set_loops()
+	tw2.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tw2.tween_property(btn, "modulate:a", 0.85, 0.8)
+	tw2.tween_property(btn, "modulate:a", 1.0, 0.8)
+
+
+# ============================================================================
+# 广告播放系统
+# ============================================================================
+
+func _create_ad_overlay() -> void:
+	_ad_overlay = Control.new()
+	_ad_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_ad_overlay.visible = false
+	_ad_overlay.z_index = 100
+	_ad_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(_ad_overlay)
+
+	var bg := ColorRect.new()
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bg.color = Color(0, 0, 0, 1)
+	bg.mouse_filter = Control.MOUSE_FILTER_STOP
+	_ad_overlay.add_child(bg)
+
+	_ad_player = VLCMediaPlayer.new()
+	_ad_player.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_ad_overlay.add_child(_ad_player)
+
+	_ad_skip_btn = Button.new()
+	_ad_skip_btn.text = "跳过"
+	_ad_skip_btn.visible = false
+	_ad_skip_btn.custom_minimum_size = Vector2(80, 36)
+	_ad_skip_btn.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_ad_skip_btn.offset_left = -96
+	_ad_skip_btn.offset_top = 20
+	_ad_skip_btn.offset_right = -20
+	_ad_skip_btn.offset_bottom = 56
+	_ad_skip_btn.add_theme_color_override("font_color", Color(1, 1, 1, 0.85))
+	_ad_skip_btn.add_theme_font_size_override("font_size", 14)
+	var skip_style := StyleBoxFlat.new()
+	skip_style.bg_color = Color(0.15, 0.15, 0.2, 0.6)
+	skip_style.corner_radius_top_left = 18
+	skip_style.corner_radius_top_right = 18
+	skip_style.corner_radius_bottom_right = 18
+	skip_style.corner_radius_bottom_left = 18
+	_ad_skip_btn.add_theme_stylebox_override("normal", skip_style)
+	var skip_hover := skip_style.duplicate()
+	skip_hover.bg_color = Color(0.3, 0.3, 0.35, 0.8)
+	_ad_skip_btn.add_theme_stylebox_override("hover", skip_hover)
+	_ad_skip_btn.add_theme_stylebox_override("pressed", skip_hover)
+	_ad_skip_btn.pressed.connect(_on_ad_skip)
+	_ad_overlay.add_child(_ad_skip_btn)
+
+	_ad_skip_timer = Timer.new()
+	_ad_skip_timer.wait_time = 5.0
+	_ad_skip_timer.one_shot = true
+	_ad_skip_timer.timeout.connect(_on_ad_skip_timer_timeout)
+	_ad_overlay.add_child(_ad_skip_timer)
+
+	_ad_http = HTTPRequest.new()
+	add_child(_ad_http)
+
+
+func _on_ad_skip_timer_timeout() -> void:
+	_ad_skip_btn.visible = true
+
+
+func _on_watch_ad_pressed() -> void:
+	if _ad_downloading:
+		info_label.text = "正在加载广告，请稍候..."
+		return
+	if _ad_urls.is_empty():
+		info_label.text = "广告列表为空，正在获取..."
+		await _fetch_ad_list()
+	if _ad_urls.is_empty():
+		info_label.text = "无法获取广告列表"
+		return
+	_download_random_ad()
+
+
+func _fetch_ad_list() -> void:
+	_ad_http.request_completed.disconnect(_on_ad_list_fetched) if _ad_http.request_completed.is_connected(_on_ad_list_fetched) else null
+	_ad_http.request_completed.connect(_on_ad_list_fetched)
+	var err := _ad_http.request(AD_LIST_URL)
+	if err != OK:
+		print("[Ad] Failed to request ad list: ", err)
+
+
+func _on_ad_list_fetched(_result: int, _response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+	_ad_http.request_completed.disconnect(_on_ad_list_fetched)
+	var text := body.get_string_from_utf8()
+	var urls: Array[String] = []
+	for line in text.split("\n", false):
+		line = line.strip_edges()
+		if line.is_empty():
+			continue
+		if not line.begins_with("http://") and not line.begins_with("https://"):
+			line = "https://" + line
+		urls.append(line)
+	_ad_urls = urls
+	print("[Ad] Loaded %d ad URLs" % _ad_urls.size())
+
+
+func _download_random_ad() -> void:
+	if _ad_urls.is_empty():
+		return
+	_ad_downloading = true
+	var url := _ad_urls[randi() % _ad_urls.size()]
+	var file_name := url.get_file()
+	if file_name.is_empty():
+		file_name = "ad_%d.mp4" % Time.get_unix_time_from_system()
+	var cache_dir := ProjectSettings.globalize_path(AD_CACHE_DIR)
+	DirAccess.make_dir_recursive_absolute(cache_dir)
+	var local_path := AD_CACHE_DIR.path_join(file_name)
+	var global_path := ProjectSettings.globalize_path(local_path)
+
+	if FileAccess.file_exists(global_path):
+		print("[Ad] Using cached ad: ", local_path)
+		_ad_downloading = false
+		_play_ad(global_path)
+		return
+
+	info_label.text = "加载广告中..."
+	_ad_http.request_completed.disconnect(_on_ad_downloaded) if _ad_http.request_completed.is_connected(_on_ad_downloaded) else null
+	_ad_http.request_completed.connect(_on_ad_downloaded.bind(local_path))
+	var err := _ad_http.request(url)
+	if err != OK:
+		_ad_downloading = false
+		info_label.text = "广告加载失败"
+		print("[Ad] Download request failed: ", err)
+
+
+func _on_ad_downloaded(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray, local_path: String) -> void:
+	_ad_http.request_completed.disconnect(_on_ad_downloaded)
+	_ad_downloading = false
+	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
+		info_label.text = "广告下载失败"
+		print("[Ad] Download failed: result=%d code=%d" % [result, response_code])
+		return
+	var file := FileAccess.open(local_path, FileAccess.WRITE)
+	if file == null:
+		info_label.text = "广告缓存失败"
+		print("[Ad] Failed to write cache: ", local_path)
+		return
+	file.store_buffer(body)
+	file.close()
+	print("[Ad] Downloaded and cached: ", local_path, " (", body.size(), " bytes)")
+	_play_ad(ProjectSettings.globalize_path(local_path))
+
+
+func _play_ad(video_path: String) -> void:
+	_ad_overlay.visible = true
+	_ad_skip_btn.visible = false
+	_ad_reward_pending = false
+
+	_ad_media = VLCMedia.load_from_file(video_path)
+	_ad_player.set_media(_ad_media)
+
+	var music_bus_idx := AudioServer.get_bus_index("Music")
+	if music_bus_idx >= 0:
+		_ad_music_muted = AudioServer.is_bus_mute(music_bus_idx)
+		AudioServer.set_bus_mute(music_bus_idx, true)
+
+	_ad_player.play()
+	_ad_skip_timer.start()
+
+	_ad_overlay.modulate.a = 0.0
+	var tw := create_tween()
+	tw.tween_property(_ad_overlay, "modulate:a", 1.0, 0.3)
+
+
+func _on_ad_skip() -> void:
+	if _ad_reward_pending:
+		return
+	_ad_skip_timer.stop()
+	_ad_player.stop_async()
+	_ad_overlay.visible = false
+
+	var music_bus_idx := AudioServer.get_bus_index("Music")
+	if music_bus_idx >= 0:
+		AudioServer.set_bus_mute(music_bus_idx, _ad_music_muted)
+
+	if _ad_skip_btn.visible:
+		_claim_ad_reward()
+
+
+func _on_ad_skip_timer_timeout() -> void:
+	_ad_skip_btn.visible = true
+
+
+func _claim_ad_reward() -> void:
+	if _ad_reward_pending:
+		return
+	_ad_reward_pending = true
+	_add_energy(10)
+	info_label.text = "获得10个代币！"
+	print("[Ad] Reward claimed: +10 energy")
+	_ad_skip_timer.stop()
+	_ad_player.stop_async()
+	_ad_overlay.visible = false
+
+	var music_bus_idx := AudioServer.get_bus_index("Music")
+	if music_bus_idx >= 0:
+		AudioServer.set_bus_mute(music_bus_idx, _ad_music_muted)

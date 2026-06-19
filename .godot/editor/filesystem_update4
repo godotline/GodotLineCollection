@@ -1,8 +1,2 @@
-res://addons/imgui-godot/data/ImGuiRoot.tscn
-res://Scripts/circle_avatar.gdshader
-res://Scripts/rounded_clip.gdshader
 res://Scenes/LevelManager.tscn
-res://Scripts/PopupToast.gd
-res://Scripts/ImGuiDebug.gd
-res://Scripts/UserManager.gd
-res://Scripts/gas/cloud_archive_service.gd
+res://default_bus_layout.tres
