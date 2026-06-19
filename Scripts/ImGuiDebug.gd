@@ -54,21 +54,7 @@ func _on_imgui_layout() -> void:
 		return
 
 	if ImGui.Begin("Imgui"):
-		if ImGui.Button("Toast"):
+		if ImGui.Button("TestToast"):
 			PopupToast.show("Hello, GodotLine!")
-			print("[ImGuiDebug] 显示 toast")
-
-		ImGui.SameLine()
-
-		if ImGui.Button("Multi Toast"):
-			PopupToast.show("这是一条较长的测试消息")
-			PopupToast.show("第二条消息", 3.0)
-			print("[ImGuiDebug] 批量显示 toast")
-
-		ImGui.SameLine()
-
-		if ImGui.Button("Show Debug"):
-			PopupToast.debug("这是一条调试消息", 4.0)
-			print("[ImGuiDebug] 显示调试 toast")
 
 	ImGui.End()
