@@ -885,9 +885,18 @@ func _perform_pck_load() -> void:
 	CustomLoadScreen.pending_cover = _load_data.cover
 	CustomLoadScreen.pending_title = _load_data.title
 	_cleanup_loading()
+	_sync_long_scene_manager_current_scene()
 	LongSceneManager.switch_scene(scene_path,
 		LongSceneManager.LoadMethod.DIRECT, false,
 		"res://Scenes/CustomLoadScreen.tscn")
+
+
+func _sync_long_scene_manager_current_scene() -> void:
+	var tree := get_tree()
+	if tree == null or tree.current_scene == null:
+		return
+	LongSceneManager.current_scene = tree.current_scene
+	LongSceneManager.current_scene_path = tree.current_scene.scene_file_path
 
 
 ## 显示校验界面

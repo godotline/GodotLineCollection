@@ -2,3 +2,4 @@ res://Scenes/LevelManager.tscn
 res://Scripts/circle_avatar.gdshader
 res://Scripts/rounded_clip.gdshader
 res://Scripts/ImGuiDebug.gd
+res://Scripts/LevelManager.gd
