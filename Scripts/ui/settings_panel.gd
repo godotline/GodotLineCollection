@@ -17,6 +17,7 @@ const SETTINGS_CFG_PATH := "user://settings.cfg"
 @onready var _view_option: OptionButton = $Panel/Margin/VBox/Scroll/Content/DisplaySection/ViewRow/ViewOption
 @onready var _music_toggle: CheckButton = $Panel/Margin/VBox/Scroll/Content/DisplaySection/MusicRow/MusicToggle
 @onready var _back_btn: Button = $Panel/Margin/VBox/TitleBar/HBox/BackBtn
+@onready var _confirm_dialog: AcceptDialog = $ConfirmDialog
 
 
 func _ready() -> void:
@@ -32,6 +33,7 @@ func _ready() -> void:
 	$Panel/Margin/VBox/TitleBar/HBox/NavIcons/CacheNav.pressed.connect(_scroll_to_section.bind(_cache_section))
 	$Panel/Margin/VBox/TitleBar/HBox/NavIcons/DisplayNav.pressed.connect(_scroll_to_section.bind(_display_section))
 	_clear_btn.pressed.connect(_on_clear_cache)
+	_confirm_dialog.confirmed.connect(_do_clear_cache)
 	_view_option.item_selected.connect(_on_view_changed)
 	_music_toggle.toggled.connect(_on_music_toggled)
 	get_viewport().size_changed.connect(_center_panel)
@@ -116,13 +118,7 @@ func _format_size(bytes: int) -> String:
 
 
 func _on_clear_cache() -> void:
-	var confirm := AcceptDialog.new()
-	confirm.title = "清除缓存"
-	confirm.dialog_text = "确定要清除所有缓存文件吗？"
-	confirm.size = Vector2i(300, 120)
-	add_child(confirm)
-	confirm.popup_centered()
-	confirm.confirmed.connect(_do_clear_cache)
+	_confirm_dialog.popup_centered()
 
 
 func _do_clear_cache() -> void:

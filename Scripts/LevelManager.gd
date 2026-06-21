@@ -12,22 +12,15 @@ extends Control
 @onready var counter_label: Label = $Margin/VBox/Preview/CounterLabel
 @onready var info_label: Label = $Margin/VBox/Bottom/InfoLabel
 @onready var info_container: VBoxContainer = $Margin/VBox/Info
+@onready var header_box: HBoxContainer = $Margin/VBox/Header
 
 var levels: Array[MenuLevelData] = []
 var current_index: int = 0
 var loaded_pcks: Array[String] = []
-var _music_player: AudioStreamPlayer
-var _music_tween: Tween
-var _current_music_data: MenuLevelData
-var _music_loop_timer: float = 0.0
-var _music_timer: SceneTreeTimer
-var _is_music_fading: bool = false
 var _animating: bool = false
 var _default_avatar: ImageTexture
 var _detail_popup: AcceptDialog
 var _import_dialog: FileDialog
-var _pending_download_data: MenuLevelData = null
-var _pending_download_key: String = ""
 
 @onready var refresh_btn: Button = $Margin/VBox/Header/RefreshBtn
 @onready var import_btn: Button = $Margin/VBox/Header/ImportBtn
@@ -41,30 +34,10 @@ var _list_container: VBoxContainer
 
 @onready var _verification_ui: ColorRect = $VerificationUI
 
-var _energy: int = 10
-var _energy_label: Label
-var _ad_overlay: Control
-var _ad_player: VLCMediaPlayer
-var _ad_media: VLCMedia
-var _ad_skip_btn: Button
-var _ad_skip_timer: Timer
-var _ad_reward_pending: bool = false
-var _ad_music_muted: bool = false
-var _ad_urls: Array[String] = []
-var _ad_http: HTTPRequest
-var _ad_downloading: bool = false
-
-const AD_LIST_URL := "https://gitee.com/des24k/DLCEADSlib/raw/master/CNads.txt"
-const AD_CACHE_DIR := "user://ad_cache"
-const ENERGY_SAVE_PATH := "user://energy.save"
-enum LoadPhase { IDLE, VERIFY_PCK, LOAD_PCK }
-var _load_phase: LoadPhase = LoadPhase.IDLE
-var _load_data: MenuLevelData = null
-var _load_key: String = ""
-var _load_pck_path: String = ""
-
-var _verify_thread: Thread
-var _verify_busy: bool = false
+var _music_preview: MusicPreview
+var _energy_system: EnergySystem
+var _ad_system: AdSystem
+var _pck_loader: PCKLoader
 
 var _slide_wrap: Control
 var _panel: PanelContainer
@@ -76,29 +49,34 @@ const FLY_IN_DUR := 0.5
 
 func _ready() -> void:
 	Engine.time_scale = 1.0
-	_music_player = AudioStreamPlayer.new()
-	_music_player.bus = "Music"
-	add_child(_music_player)
+
+	_music_preview = MusicPreview.new(self)
+	_energy_system = EnergySystem.new(header_box.get_node("EnergyLabel"), header_box.get_node("WatchAdBtn"))
+	_ad_system = AdSystem.new(self, info_label)
+	_pck_loader = PCKLoader.new()
+	_pck_loader.setup(_verification_ui, info_label)
+
+	_pck_loader.load_ready.connect(_on_pck_load_ready)
+	_pck_loader.load_failed.connect(func(msg: String): info_label.text = msg)
+	_pck_loader.pck_loaded.connect(func(key: String): loaded_pcks.append(key))
+	_energy_system.watch_ad_requested.connect(_on_watch_ad_requested)
+	_ad_system.reward_claimed.connect(func(amount: int): _energy_system.add(amount))
+
 	_create_panels()
 	_create_list_view()
 	_scan_levels()
 	_update_display()
 	_update_user_display()
-	
+
 	UserManager.user_info_updated.connect(_update_user_display)
-	
+
 	_apply_pending_cloud_data()
 	_apply_circle_avatar(avatar_rect)
 	_create_import_dialog()
 	_apply_display_settings()
-	# Ensure PCKDownloader singleton is initialized before any access
 	PCKDownloader.ensure_instance()
-	# Pre-fetch remote level URLs from GAS config (non-blocking)
 	_fetch_remote_urls()
-	_load_energy()
-	_create_energy_ui()
-	_create_ad_overlay()
-	_fetch_ad_list()
+	_ad_system.prefetch_ads()
 
 
 func _apply_pending_cloud_data() -> void:
@@ -114,15 +92,12 @@ func _apply_pending_cloud_data() -> void:
 func _fetch_remote_urls() -> void:
 	await PCKDownloader.instance.fetch_level_urls()
 	print("[LevelManager] Remote level URLs loaded: ", PCKDownloader.instance.get_level_count())
-	pass
 
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_PREDELETE:
-		if _verify_busy and _verify_thread != null:
-			_verify_busy = false
-			_verify_thread.wait_to_finish()
-			_verify_thread = null
+		if _pck_loader:
+			_pck_loader.cleanup()
 
 
 func _create_import_dialog() -> void:
@@ -140,8 +115,6 @@ func _create_import_dialog() -> void:
 	add_child(_import_dialog)
 
 
-
-
 func _on_settings_pressed() -> void:
 	var panel_scene := load("res://Scenes/SettingsPanel.tscn") as PackedScene
 	if panel_scene == null:
@@ -149,7 +122,6 @@ func _on_settings_pressed() -> void:
 	var panel := panel_scene.instantiate()
 	add_child(panel)
 	panel.settings_closed.connect(panel.queue_free)
-
 
 
 func _validate_pck(pck_global_path: String) -> Dictionary:
@@ -203,14 +175,14 @@ func _create_panels() -> void:
 	_slide_wrap.set_anchors_preset(PRESET_FULL_RECT)
 	_slide_wrap.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	preview_clip.add_child(_slide_wrap)
-	
+
 	var style := _make_panel_style()
-	
+
 	_panel = PanelContainer.new()
 	_panel.add_theme_stylebox_override("panel", style)
 	_panel.clip_children = CLIP_CHILDREN_ONLY
 	_panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	
+
 	_texture = TextureRect.new()
 	_texture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_texture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
@@ -218,13 +190,11 @@ func _create_panels() -> void:
 	_texture.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_texture.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_panel.add_child(_texture)
-	
+
 	_slide_wrap.add_child(_panel)
-	
-	# 点击面板: 启动关卡
+
 	_panel.gui_input.connect(_on_panel_gui_input)
-	
-	# 渲染后初始定位 + 飞入动画
+
 	preview_clip.resized.connect(_position_panels)
 	call_deferred("_setup_and_fly_in")
 
@@ -234,7 +204,7 @@ func _create_list_view() -> void:
 	_list_view.set_anchors_preset(PRESET_FULL_RECT)
 	_list_view.visible = false
 	preview_clip.add_child(_list_view)
-	
+
 	_list_container = VBoxContainer.new()
 	_list_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_list_container.add_theme_constant_override("separation", 4)
@@ -261,23 +231,20 @@ func _make_panel_style() -> StyleBoxFlat:
 
 
 func _setup_and_fly_in() -> void:
-	# 等待布局完成
 	await get_tree().process_frame
 	_position_panels()
-	
+
 	if levels.is_empty() or _slide_wrap.size.x < 2:
 		return
-	
+
 	_animating = true
-	
-	# 初始状态: 透明
+
 	_panel.modulate.a = 0.0
-	
-	# 淡入动画
+
 	var tw := create_tween()
 	tw.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 	tw.tween_property(_panel, "modulate:a", 1.0, FLY_IN_DUR)
-	
+
 	await tw.finished
 	_animating = false
 
@@ -285,7 +252,7 @@ func _setup_and_fly_in() -> void:
 func _position_panels() -> void:
 	if preview_clip.size.x < 2:
 		return
-	
+
 	_panel.position = Vector2.ZERO
 	_panel.size = preview_clip.size
 
@@ -301,18 +268,18 @@ func _update_display() -> void:
 		if _progress_label:
 			_progress_label.visible = false
 		return
-	
+
 	var sz: int = levels.size()
 	left_arrow.visible = (_current_mode == ViewMode.CARD) and (sz > 1)
 	right_arrow.visible = (_current_mode == ViewMode.CARD) and (sz > 1)
 	counter_label.visible = (_current_mode == ViewMode.CARD)
-	
+
 	var data: MenuLevelData = levels[current_index]
 	_texture.texture = data.cover
 	_texture.visible = data.cover != null
-	
+
 	_panel.modulate.a = 1.0
-	
+
 	level_title.text = data.title if data.title != "" else "未命名关卡"
 	_ensure_progress_label()
 	var sid: String = data.save_id
@@ -330,7 +297,7 @@ func _update_display() -> void:
 		_progress_label.visible = false
 	author_label.text = ""
 	counter_label.text = "%d / %d" % [current_index + 1, sz]
-	_play_level_music(data)
+	_music_preview.play(data)
 	info_label.text = ""
 
 
@@ -344,120 +311,23 @@ func _apply_display_settings() -> void:
 	if default_view == "list" and _current_mode == ViewMode.CARD:
 		_on_view_toggle_pressed()
 
-	if not music_preview and _music_player.playing:
-		_music_player.stop()
-		_music_player.stream = null
-		_current_music_data = null
-
-
-func _play_level_music(data: MenuLevelData) -> void:
-	if data == null or data.music == null:
-		_fade_out_music()
-		_current_music_data = null
-		return
-	if _current_music_data == data and _music_player.playing:
-		return
-
-	_current_music_data = data
-	_music_player.stream = data.music
-
-	# 设置开始播放位置
-	if data.music_start > 0:
-		_music_player.play(data.music_start)
-	else:
-		_music_player.play()
-
-	# 淡入效果
-	if data.music_fade_in > 0:
-		_music_player.volume_db = -80.0
-		_fade_in_music(data.music_fade_in)
-	else:
-		_music_player.volume_db = 0.0
-
-	# 设置循环计时器
-	_setup_music_loop(data)
-
-
-## 淡入音乐
-func _fade_in_music(duration: float) -> void:
-	if _music_tween:
-		_music_tween.kill()
-	_is_music_fading = false
-	_music_tween = create_tween()
-	_music_tween.tween_property(_music_player, "volume_db", 0.0, duration)
-
-
-## 淡出音乐
-func _fade_out_music() -> void:
-	if _music_tween:
-		_music_tween.kill()
-	if _current_music_data and _current_music_data.music_fade_out > 0:
-		_is_music_fading = true
-		_music_tween = create_tween()
-		_music_tween.tween_property(_music_player, "volume_db", -80.0, _current_music_data.music_fade_out)
-		_music_tween.tween_callback(_on_music_fade_out_complete)
-	else:
-		_music_player.stop()
-		_is_music_fading = false
-
-
-## 淡出完成回调
-func _on_music_fade_out_complete() -> void:
-	_music_player.stop()
-	_is_music_fading = false
-
-
-## 设置音乐循环
-func _setup_music_loop(data: MenuLevelData) -> void:
-	_music_loop_timer = 0.0
-	if _music_timer and _music_timer.timeout.is_connected(_on_music_segment_end):
-		_music_timer.timeout.disconnect(_on_music_segment_end)
-	if data.music_duration > 0:
-		_music_timer = get_tree().create_timer(data.music_duration - data.music_fade_out)
-		_music_timer.timeout.connect(_on_music_segment_end)
-
-
-## 音乐片段结束时淡出并循环
-func _on_music_segment_end() -> void:
-	if _current_music_data == null:
-		return
-
-	# 淡出
-	_fade_out_music()
-
-	# 等待淡出完成后重新开始
-	await get_tree().create_timer(_current_music_data.music_fade_out).timeout
-
-	# 重新播放
-	if _current_music_data:
-		_play_level_music(_current_music_data)
+	if not music_preview and _music_preview.player.playing:
+		_music_preview.player.stop()
+		_music_preview.player.stream = null
+		_music_preview.current_data = null
 
 
 func _process(_delta: float) -> void:
-	# 检查音乐是否播放到结尾（用于没有指定时长的情况）
-	if _current_music_data and _current_music_data.music_duration <= 0:
-		if _music_player.playing and not _is_music_fading:
-			# 检查是否接近结尾
-			var remaining := _music_player.stream.get_length() - _music_player.get_playback_position()
-			if remaining <= _current_music_data.music_fade_out:
-				# 淡出并循环
-				_fade_out_music()
-				await get_tree().create_timer(_current_music_data.music_fade_out).timeout
-				if _current_music_data:
-					_play_level_music(_current_music_data)
-
-	# 加载状态轮询
-	match _load_phase:
-		LoadPhase.VERIFY_PCK:
-			_poll_verify()
+	_music_preview.process(_delta)
+	_pck_loader.poll_verify()
 
 
 func _on_view_toggle_pressed() -> void:
 	if _animating:
 		return
-	
+
 	_current_mode = ViewMode.LIST if _current_mode == ViewMode.CARD else ViewMode.CARD
-	
+
 	if _current_mode == ViewMode.LIST:
 		_update_list()
 		_slide_wrap.visible = false
@@ -475,13 +345,12 @@ func _on_view_toggle_pressed() -> void:
 
 
 func _update_list() -> void:
-	# 清空现有列表
 	for child in _list_container.get_children():
 		child.queue_free()
-	
+
 	var style := _make_panel_style()
 	style.set_content_margin_all(8)
-	
+
 	for i in range(levels.size()):
 		var data := levels[i]
 		var btn := Button.new()
@@ -499,14 +368,13 @@ func _update_list() -> void:
 		btn.alignment = HorizontalAlignment.HORIZONTAL_ALIGNMENT_LEFT
 		btn.custom_minimum_size.y = 44
 		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		
-		# 样式
+
 		btn.add_theme_stylebox_override("normal", style)
 		var hover := style.duplicate()
 		hover.bg_color = Color(0.15, 0.15, 0.22, 0.9)
 		btn.add_theme_stylebox_override("hover", hover)
 		btn.add_theme_stylebox_override("pressed", hover)
-		
+
 		btn.pressed.connect(_on_list_item_selected.bind(i))
 		_list_container.add_child(btn)
 
@@ -531,35 +399,31 @@ func _on_right_arrow() -> void:
 
 func _animate_switch(direction: int) -> void:
 	_animating = true
-	
-	# 1. 淡出当前内容
+
 	var tw_out := create_tween()
 	tw_out.set_parallel(true)
 	tw_out.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	
+
 	tw_out.tween_property(_panel, "modulate:a", 0.0, SLIDE_DUR)
 	tw_out.tween_property(info_container, "modulate:a", 0.0, SLIDE_DUR * 0.6)
-	
+
 	await tw_out.finished
-	
-	# 2. 更新内容
+
 	current_index = (current_index + direction + levels.size()) % levels.size()
 	_update_display()
-	
-	# 3. 准备淡入
+
 	_panel.modulate.a = 0.0
 	info_container.modulate.a = 0.0
-	
-	# 4. 淡入新内容
+
 	var tw_in := create_tween()
 	tw_in.set_parallel(true)
 	tw_in.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	
+
 	tw_in.tween_property(_panel, "modulate:a", 1.0, FLY_IN_DUR)
 	tw_in.tween_property(info_container, "modulate:a", 1.0, FLY_IN_DUR * 0.6)
-	
+
 	await tw_in.finished
-	
+
 	_animating = false
 
 
@@ -571,32 +435,11 @@ func _on_panel_gui_input(event: InputEvent) -> void:
 
 
 func _start_level() -> void:
-	# Block level start if a download is already in progress
-	if _pending_download_data != null:
-		info_label.text = "正在下载中，请稍候..."
+	if _pck_loader.is_busy():
+		if _pck_loader.phase == PCKLoader.Phase.IDLE:
+			info_label.text = "正在下载中，请稍候..."
 		return
-	if _load_phase != LoadPhase.IDLE:
-		return
-
-	var data: MenuLevelData = levels[current_index]
-	var key: String = data.resource_path if data.resource_path != "" else data.title
-
-	# Find PCK file (local path or cached)
-	var pck_path: String = _resolve_pck_path(data)
-	if pck_path.is_empty() and PCKDownloader.instance.is_cached(data.save_id):
-		pck_path = PCKDownloader.instance.get_cached_path(data.save_id)
-
-	if pck_path.is_empty():
-		# No local/cached PCK file, check remote
-		var remote_url := PCKDownloader.instance.get_url(data.save_id)
-		if not remote_url.is_empty():
-			_start_remote_download(data, key)
-		else:
-			info_label.text = "未配置PCK文件"
-		return
-
-	# Start async loading flow
-	_start_loading_flow(data, key, pck_path)
+	_pck_loader.start_level(levels[current_index])
 
 
 func _on_info_button() -> void:
@@ -694,8 +537,6 @@ func _on_pck_file_selected(path: String) -> void:
 	get_tree().call_deferred("change_scene_to_file", scene_path)
 
 func _copy_content_uri(uri: String) -> String:
-	# Copy SAF content:// URI to local cache using Godot's FileAccess
-	# (avoids fragile JavaClassWrapper reflection, works on Android 14+)
 	var src := FileAccess.open(uri, FileAccess.READ)
 	if src == null:
 		push_error("SAF: failed to open content URI: %s" % uri)
@@ -710,10 +551,9 @@ func _copy_content_uri(uri: String) -> String:
 		push_error("SAF: failed to write cache file: %s" % dest)
 		return ""
 
-	# Buffer the copy in chunks to avoid OOM on large PCKs
 	var buf: PackedByteArray
 	while true:
-		buf = src.get_buffer(1 << 16)  # 64 KB chunks
+		buf = src.get_buffer(1 << 16)
 		if buf.is_empty():
 			break
 		dst.store_buffer(buf)
@@ -782,129 +622,7 @@ func _scan_levels() -> void:
 		levels = list.levels
 
 
-func _load_pck(pck_path: String, level_key: String) -> bool:
-	var global_path: String = pck_path if pck_path.is_absolute_path() else ProjectSettings.globalize_path(pck_path)
-	if not FileAccess.file_exists(global_path):
-		print("[LevelManager] _load_pck: PCK file does not exist: %s" % global_path)
-		info_label.text = "PCK文件不存在"
-		return false
-	var success := ProjectSettings.load_resource_pack(global_path)
-	if success:
-		print('[LevelManager] _load_pck: loaded PCK "%s" (key: %s)' % [global_path, level_key])
-		loaded_pcks.append(level_key)
-		return true
-	print("[LevelManager] _load_pck: FAILED to load PCK: %s" % global_path)
-	info_label.text = "PCK加载失败"
-	return false
-
-
-## Switch to level scene (used by import PCK flow). Returns false if scene_path is empty.
-func _switch_to_scene(data: MenuLevelData) -> bool:
-	var scene: String = data.scene_path
-	if scene.is_empty():
-		print("[LevelManager] _switch_to_scene: scene_path is empty")
-		info_label.text = "未配置场景路径"
-		return false
-	print('[LevelManager] _switch_to_scene: switching to "%s" (title: %s)' % [scene, data.title])
-	get_tree().call_deferred("change_scene_to_file", scene)
-	return true
-
-
-# ============================================================================
-# 异步加载流程
-# ============================================================================
-
-## 解析 PCK 文件路径（本地路径）
-func _resolve_pck_path(data: MenuLevelData) -> String:
-	var local_path := ProjectSettings.globalize_path(data.pck_path)
-	if not data.pck_path.is_empty() and FileAccess.file_exists(local_path):
-		return data.pck_path
-	return ""
-
-
-## 开始异步加载流程(显示校验 UI -> 后台 MD5 -> 加载 UI -> 异步场景 -> 渐变切换)
-func _start_loading_flow(data: MenuLevelData, key: String, pck_path: String) -> void:
-	_load_data = data
-	_load_key = key
-	_load_pck_path = pck_path
-	_show_verification_ui()
-	var expected_md5 := PCKDownloader.instance.get_md5(data.save_id)
-	if expected_md5.is_empty():
-		_proceed_to_load()
-	else:
-		_load_phase = LoadPhase.VERIFY_PCK
-		_start_verify(pck_path, expected_md5)
-
-
-## 在后台线程启动 MD5 校验
-func _start_verify(pck_path: String, expected_md5: String) -> void:
-	_verify_busy = true
-	_verify_thread = Thread.new()
-	_verify_thread.start(_verify_worker.bind(pck_path, expected_md5))
-
-
-## 后台线程工作函数
-static func _verify_worker(pck_path: String, expected_md5: String) -> Dictionary:
-	var actual_md5 := _compute_file_md5(pck_path)
-	if actual_md5.is_empty():
-		return {"ok": false, "md5": "", "pck_path": pck_path}
-	var ok := actual_md5.to_lower() == expected_md5.to_lower()
-	return {"ok": ok, "md5": actual_md5, "pck_path": pck_path}
-
-
-## 轮询后台验证线程(由 _process 调用)
-func _poll_verify() -> void:
-	if not _verify_busy:
-		return
-	if _verify_thread.is_alive():
-		return
-	_verify_busy = false
-	var result: Dictionary = _verify_thread.wait_to_finish()
-	_verify_thread = null
-	if result.ok:
-		_proceed_to_load()
-	else:
-		_on_verify_failed()
-
-
-## 验证失败 -> 重新下载或直接加载
-func _on_verify_failed() -> void:
-	var data := _load_data
-	var remote_url := PCKDownloader.instance.get_url(data.save_id)
-	if not remote_url.is_empty():
-		_cleanup_loading()
-		if PCKDownloader.instance.is_cached(data.save_id):
-			var cached_path := PCKDownloader.instance.get_cached_path(data.save_id)
-			if not cached_path.is_empty():
-				DirAccess.remove_absolute(cached_path)
-		_start_remote_download(data, _load_key)
-	else:
-		print("[LevelManager] Integrity check failed for %s, no remote URL, loading anyway" % data.save_id)
-		_proceed_to_load()
-
-
-## 验证通过或跳过: 加载 PCK -> LongSceneManager 跨场景过渡
-func _proceed_to_load() -> void:
-	_hide_verification_ui()
-	_load_phase = LoadPhase.LOAD_PCK
-	call_deferred("_perform_pck_load")
-
-
-## 执行 PCK 加载(同步), 然后交 LongSceneManager 处理场景切换+淡入淡出
-func _perform_pck_load() -> void:
-	if _load_phase != LoadPhase.LOAD_PCK:
-		return
-	if not _load_pck(_load_pck_path, _load_key):
-		_cleanup_loading()
-		info_label.text = "PCK加载失败"
-		return
-
-	# PCK 加载成功 → 隐藏验证 UI → 交给 LSM 做跨场景过渡
-	_verification_ui.visible = false
-	var scene_path := _load_data.scene_path
-	CustomLoadScreen.pending_cover = _load_data.cover
-	CustomLoadScreen.pending_title = _load_data.title
-	_cleanup_loading()
+func _on_pck_load_ready(data: MenuLevelData, scene_path: String) -> void:
 	_sync_long_scene_manager_current_scene()
 	LongSceneManager.switch_scene(scene_path,
 		LongSceneManager.LoadMethod.DIRECT, false,
@@ -919,121 +637,8 @@ func _sync_long_scene_manager_current_scene() -> void:
 	LongSceneManager.current_scene_path = tree.current_scene.scene_file_path
 
 
-## 显示校验界面
-func _show_verification_ui() -> void:
-	_verification_ui.visible = true
-
-
-## 隐藏校验界面
-func _hide_verification_ui() -> void:
-	_verification_ui.visible = false
-
-
-## 清理加载状态
-func _cleanup_loading() -> void:
-	_load_phase = LoadPhase.IDLE
-	_load_data = null
-	_load_key = ""
-	_load_pck_path = ""
-	_verification_ui.visible = false
-	if _verify_busy:
-		_verify_busy = false
-		if _verify_thread != null:
-			_verify_thread.wait_to_finish()
-			_verify_thread = null
-
-
-func _start_remote_download(data: MenuLevelData, level_key: String) -> void:
-	_connect_download_signals()
-	_pending_download_data = data
-	_pending_download_key = level_key
-	info_label.text = "下载中..."
-	PCKDownloader.instance.download(data.save_id, PCKDownloader.instance.get_url(data.save_id))
-
-
-func _on_download_progress(save_id: String, percent: float) -> void:
-	info_label.text = "下载中... %d%%" % int(percent)
-
-
-func _on_download_completed(save_id: String, cached_path: String) -> void:
-	_disconnect_download_signals()
-	var data := _pending_download_data
-	var key := _pending_download_key
-	_pending_download_data = null
-	_pending_download_key = ""
-
-	# Validate the completed download matches what we requested
-	if data == null or save_id != data.save_id:
-		print("[LevelManager] Download completed for unexpected save_id: ", save_id)
-		return
-
-	# Start loading flow with the cached PCK (includes background verify + loading UI)
-	_start_loading_flow(data, key, cached_path)
-
-
-func _on_download_failed(save_id: String, error: String) -> void:
-	_disconnect_download_signals()
-	_pending_download_data = null
-	_pending_download_key = ""
-	info_label.text = "下载失败: %s，请在设置中切换下载源后重试" % error
-
-
-func _connect_download_signals() -> void:
-	if not PCKDownloader.instance.download_progress.is_connected(_on_download_progress):
-		PCKDownloader.instance.download_progress.connect(_on_download_progress)
-		PCKDownloader.instance.download_completed.connect(_on_download_completed)
-		PCKDownloader.instance.download_failed.connect(_on_download_failed)
-
-
-func _disconnect_download_signals() -> void:
-	if PCKDownloader.instance.download_progress.is_connected(_on_download_progress):
-		PCKDownloader.instance.download_progress.disconnect(_on_download_progress)
-		PCKDownloader.instance.download_completed.disconnect(_on_download_completed)
-		PCKDownloader.instance.download_failed.disconnect(_on_download_failed)
-
-
-## Compute MD5 hex digest of a file at the given absolute path.
-## Uses HashingContext with 64KB chunked reading.
-## Returns empty string on error.
-static func _compute_file_md5(path: String) -> String:
-	var file := FileAccess.open(path, FileAccess.READ)
-	if file == null:
-		push_error("PCK MD5: failed to open ", path)
-		return ""
-	var ctx := HashingContext.new()
-	ctx.start(HashingContext.HASH_MD5)
-	while file.get_position() < file.get_length():
-		ctx.update(file.get_buffer(1 << 16))  # 64 KB chunks
-	var hash_bytes := ctx.finish()
-	file.close()
-	var hex := PackedStringArray()
-	for b in hash_bytes:
-		hex.append("%02x" % b)
-	return "".join(hex)
-
-
-## Verify PCK file integrity against remote configuration.
-## Returns true if: no MD5 configured (skip), or MD5 matches.
-## Returns false if MD5 is configured but doesn't match.
-func _verify_pck_integrity(pck_path: String, save_id: String) -> bool:
-	var expected_md5 := PCKDownloader.instance.get_md5(save_id)
-	if expected_md5.is_empty():
-		return true  # No remote MD5 configured, skip check
-
-	var global_path := pck_path if pck_path.is_absolute_path() else ProjectSettings.globalize_path(pck_path)
-	if not FileAccess.file_exists(global_path):
-		return false
-
-	var actual_md5 := _compute_file_md5(global_path)
-	if actual_md5.is_empty():
-		return false
-
-	var match := actual_md5.to_lower() == expected_md5.to_lower()
-	if match:
-		print("[LevelManager] Integrity check PASSED for %s" % save_id)
-	else:
-		print("[LevelManager] Integrity check FAILED for %s: expected %s, got %s" % [save_id, expected_md5, actual_md5])
-	return match
+func _on_watch_ad_requested() -> void:
+	_ad_system.start()
 
 
 func get_save_data() -> Dictionary:
@@ -1050,299 +655,3 @@ func apply_save_data(data: Dictionary) -> void:
 	else:
 		print("[LevelManager] no level_progress key in data")
 	_update_display()
-
-
-# ============================================================================
-# 消耗品系统 (能量 / 代币)
-# ============================================================================
-
-func _load_energy() -> void:
-	var file := FileAccess.open(ENERGY_SAVE_PATH, FileAccess.READ)
-	if file != null:
-		_energy = file.get_32()
-		file.close()
-	else:
-		_energy = 10
-		_save_energy()
-
-
-func _save_energy() -> void:
-	var file := FileAccess.open(ENERGY_SAVE_PATH, FileAccess.WRITE)
-	if file != null:
-		file.store_32(_energy)
-		file.close()
-
-
-func _consume_energy() -> bool:
-	if _energy <= 0:
-		return false
-	_energy -= 1
-	_save_energy()
-	_update_energy_display()
-	return true
-
-
-func _add_energy(amount: int) -> void:
-	_energy += amount
-	_save_energy()
-	_update_energy_display()
-
-
-func _update_energy_display() -> void:
-	if _energy_label:
-		_energy_label.text = "💎 %d" % _energy
-
-
-func _create_energy_ui() -> void:
-	var header: HBoxContainer = $Margin/VBox/Header
-
-	_energy_label = Label.new()
-	_energy_label.text = "💎 %d" % _energy
-	_energy_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3, 1.0))
-	_energy_label.add_theme_font_size_override("font_size", 15)
-	header.add_child(_energy_label)
-	header.move_child(_energy_label, 4)
-
-	var watch_ad_btn := Button.new()
-	watch_ad_btn.text = "🎬 看广告"
-	watch_ad_btn.tooltip_text = "观看广告获得10个代币"
-	watch_ad_btn.custom_minimum_size = Vector2(100, 0)
-	var ad_style := StyleBoxFlat.new()
-	ad_style.bg_color = Color(0.95, 0.25, 0.15, 0.95)
-	ad_style.corner_radius_top_left = 20
-	ad_style.corner_radius_top_right = 20
-	ad_style.corner_radius_bottom_right = 20
-	ad_style.corner_radius_bottom_left = 20
-	ad_style.border_width_left = 2
-	ad_style.border_width_top = 2
-	ad_style.border_width_right = 2
-	ad_style.border_width_bottom = 2
-	ad_style.border_color = Color(1.0, 0.5, 0.2, 0.8)
-	var ad_hover := ad_style.duplicate()
-	ad_hover.bg_color = Color(1.0, 0.35, 0.2, 1.0)
-	ad_hover.border_color = Color(1.0, 0.7, 0.4, 1.0)
-	watch_ad_btn.add_theme_stylebox_override("normal", ad_style)
-	watch_ad_btn.add_theme_stylebox_override("hover", ad_hover)
-	watch_ad_btn.add_theme_stylebox_override("pressed", ad_hover)
-	watch_ad_btn.add_theme_color_override("font_color", Color(1, 1, 1, 1))
-	watch_ad_btn.add_theme_font_size_override("font_size", 13)
-	watch_ad_btn.pressed.connect(_on_watch_ad_pressed)
-	header.add_child(watch_ad_btn)
-	header.move_child(watch_ad_btn, 5)
-
-	_start_ad_btn_pulse(watch_ad_btn)
-
-
-func _start_ad_btn_pulse(btn: Button) -> void:
-	if not is_instance_valid(btn):
-		return
-	var tw := create_tween()
-	tw.set_loops()
-	tw.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	tw.tween_property(btn, "scale", Vector2(1.05, 1.05), 0.8)
-	tw.tween_property(btn, "scale", Vector2(1.0, 1.0), 0.8)
-	var tw2 := create_tween()
-	tw2.set_loops()
-	tw2.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	tw2.tween_property(btn, "modulate:a", 0.85, 0.8)
-	tw2.tween_property(btn, "modulate:a", 1.0, 0.8)
-
-
-# ============================================================================
-# 广告播放系统
-# ============================================================================
-
-func _create_ad_overlay() -> void:
-	_ad_overlay = Control.new()
-	_ad_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_ad_overlay.visible = false
-	_ad_overlay.z_index = 100
-	_ad_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
-	add_child(_ad_overlay)
-
-	var bg := ColorRect.new()
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	bg.color = Color(0, 0, 0, 1)
-	bg.mouse_filter = Control.MOUSE_FILTER_STOP
-	_ad_overlay.add_child(bg)
-
-	_ad_player = VLCMediaPlayer.new()
-	_ad_player.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_ad_overlay.add_child(_ad_player)
-
-	_ad_skip_btn = Button.new()
-	_ad_skip_btn.text = "跳过"
-	_ad_skip_btn.visible = false
-	_ad_skip_btn.custom_minimum_size = Vector2(80, 36)
-	_ad_skip_btn.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	_ad_skip_btn.offset_left = -96
-	_ad_skip_btn.offset_top = 20
-	_ad_skip_btn.offset_right = -20
-	_ad_skip_btn.offset_bottom = 56
-	_ad_skip_btn.add_theme_color_override("font_color", Color(1, 1, 1, 0.85))
-	_ad_skip_btn.add_theme_font_size_override("font_size", 14)
-	var skip_style := StyleBoxFlat.new()
-	skip_style.bg_color = Color(0.15, 0.15, 0.2, 0.6)
-	skip_style.corner_radius_top_left = 18
-	skip_style.corner_radius_top_right = 18
-	skip_style.corner_radius_bottom_right = 18
-	skip_style.corner_radius_bottom_left = 18
-	_ad_skip_btn.add_theme_stylebox_override("normal", skip_style)
-	var skip_hover := skip_style.duplicate()
-	skip_hover.bg_color = Color(0.3, 0.3, 0.35, 0.8)
-	_ad_skip_btn.add_theme_stylebox_override("hover", skip_hover)
-	_ad_skip_btn.add_theme_stylebox_override("pressed", skip_hover)
-	_ad_skip_btn.pressed.connect(_on_ad_skip)
-	_ad_overlay.add_child(_ad_skip_btn)
-
-	_ad_skip_timer = Timer.new()
-	_ad_skip_timer.wait_time = 5.0
-	_ad_skip_timer.one_shot = true
-	_ad_skip_timer.timeout.connect(_on_ad_skip_timer_timeout)
-	_ad_overlay.add_child(_ad_skip_timer)
-
-	_ad_http = HTTPRequest.new()
-	add_child(_ad_http)
-
-
-func _on_ad_skip_timer_timeout() -> void:
-	_ad_skip_btn.visible = true
-
-
-func _on_watch_ad_pressed() -> void:
-	if _ad_downloading:
-		info_label.text = "正在加载广告，请稍候..."
-		return
-	if _ad_urls.is_empty():
-		info_label.text = "广告列表为空，正在获取..."
-		await _fetch_ad_list()
-	if _ad_urls.is_empty():
-		info_label.text = "无法获取广告列表"
-		return
-	_download_random_ad()
-
-
-func _fetch_ad_list() -> void:
-	_ad_http.request_completed.disconnect(_on_ad_list_fetched) if _ad_http.request_completed.is_connected(_on_ad_list_fetched) else null
-	_ad_http.request_completed.connect(_on_ad_list_fetched)
-	var err := _ad_http.request(AD_LIST_URL)
-	if err != OK:
-		print("[Ad] Failed to request ad list: ", err)
-
-
-func _on_ad_list_fetched(_result: int, _response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
-	_ad_http.request_completed.disconnect(_on_ad_list_fetched)
-	var text := body.get_string_from_utf8()
-	var urls: Array[String] = []
-	for line in text.split("\n", false):
-		line = line.strip_edges()
-		if line.is_empty():
-			continue
-		if not line.begins_with("http://") and not line.begins_with("https://"):
-			line = "https://" + line
-		urls.append(line)
-	_ad_urls = urls
-	print("[Ad] Loaded %d ad URLs" % _ad_urls.size())
-
-
-func _download_random_ad() -> void:
-	if _ad_urls.is_empty():
-		return
-	_ad_downloading = true
-	var url := _ad_urls[randi() % _ad_urls.size()]
-	var file_name := url.get_file()
-	if file_name.is_empty():
-		file_name = "ad_%d.mp4" % Time.get_unix_time_from_system()
-	var cache_dir := ProjectSettings.globalize_path(AD_CACHE_DIR)
-	DirAccess.make_dir_recursive_absolute(cache_dir)
-	var local_path := AD_CACHE_DIR.path_join(file_name)
-	var global_path := ProjectSettings.globalize_path(local_path)
-
-	if FileAccess.file_exists(global_path):
-		print("[Ad] Using cached ad: ", local_path)
-		_ad_downloading = false
-		_play_ad(global_path)
-		return
-
-	info_label.text = "加载广告中..."
-	_ad_http.request_completed.disconnect(_on_ad_downloaded) if _ad_http.request_completed.is_connected(_on_ad_downloaded) else null
-	_ad_http.request_completed.connect(_on_ad_downloaded.bind(local_path))
-	var err := _ad_http.request(url)
-	if err != OK:
-		_ad_downloading = false
-		info_label.text = "广告加载失败"
-		print("[Ad] Download request failed: ", err)
-
-
-func _on_ad_downloaded(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray, local_path: String) -> void:
-	_ad_http.request_completed.disconnect(_on_ad_downloaded)
-	_ad_downloading = false
-	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
-		info_label.text = "广告下载失败"
-		print("[Ad] Download failed: result=%d code=%d" % [result, response_code])
-		return
-	var file := FileAccess.open(local_path, FileAccess.WRITE)
-	if file == null:
-		info_label.text = "广告缓存失败"
-		print("[Ad] Failed to write cache: ", local_path)
-		return
-	file.store_buffer(body)
-	file.close()
-	print("[Ad] Downloaded and cached: ", local_path, " (", body.size(), " bytes)")
-	_play_ad(ProjectSettings.globalize_path(local_path))
-
-
-func _play_ad(video_path: String) -> void:
-	_ad_overlay.visible = true
-	_ad_skip_btn.visible = false
-	_ad_reward_pending = false
-
-	_ad_media = VLCMedia.load_from_file(video_path)
-	_ad_player.set_media(_ad_media)
-
-	var music_bus_idx := AudioServer.get_bus_index("Music")
-	if music_bus_idx >= 0:
-		_ad_music_muted = AudioServer.is_bus_mute(music_bus_idx)
-		AudioServer.set_bus_mute(music_bus_idx, true)
-
-	_ad_player.play()
-	_ad_skip_timer.start()
-
-	_ad_overlay.modulate.a = 0.0
-	var tw := create_tween()
-	tw.tween_property(_ad_overlay, "modulate:a", 1.0, 0.3)
-
-
-func _on_ad_skip() -> void:
-	if _ad_reward_pending:
-		return
-	_ad_skip_timer.stop()
-	_ad_player.stop_async()
-	_ad_overlay.visible = false
-
-	var music_bus_idx := AudioServer.get_bus_index("Music")
-	if music_bus_idx >= 0:
-		AudioServer.set_bus_mute(music_bus_idx, _ad_music_muted)
-
-	if _ad_skip_btn.visible:
-		_claim_ad_reward()
-
-
-func _on_ad_skip_timer_timeout() -> void:
-	_ad_skip_btn.visible = true
-
-
-func _claim_ad_reward() -> void:
-	if _ad_reward_pending:
-		return
-	_ad_reward_pending = true
-	_add_energy(10)
-	info_label.text = "获得10个代币！"
-	print("[Ad] Reward claimed: +10 energy")
-	_ad_skip_timer.stop()
-	_ad_player.stop_async()
-	_ad_overlay.visible = false
-
-	var music_bus_idx := AudioServer.get_bus_index("Music")
-	if music_bus_idx >= 0:
-		AudioServer.set_bus_mute(music_bus_idx, _ad_music_muted)
