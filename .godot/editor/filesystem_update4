@@ -4,3 +4,6 @@ res://Scripts/ui/settings_panel.gd
 res://Scenes/LevelManager.tscn
 res://Scripts/LevelManager.gd
 res://Scenes/ad_overlay.tscn
+res://Scripts/MenuLevelData.gd
+res://Scripts/ui/floating_bubbles.gd
+res://pck_levels/level_list.tres
