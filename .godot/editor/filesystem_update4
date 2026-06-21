@@ -1,2 +1,5 @@
 res://Scenes/LevelManager.tscn
-res://default_bus_layout.tres
+res://Scripts/LevelManager.gd
+res://Scripts/ad_system.gd
+res://Scripts/energy_system.gd
+res://Scripts/music_preview.gd

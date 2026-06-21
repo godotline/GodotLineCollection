@@ -4,10 +4,10 @@ compatibility_minimum = 4.3
 reloadable = true
 
 [libraries]
-windows.debug.x86_64 = "res://addons/godot-vlc/bin/win-x64/godot_vlc_debug.dll"
+windows.debug.x86_64 = "res://addons/godot-vlc/bin/win-x64/godot_vlc.dll"
 windows.release.x86_64 = "res://addons/godot-vlc/bin/win-x64/godot_vlc.dll"
 
-linux.debug.x86_64 = "res://addons/godot-vlc/bin/linux-x64/libgodot_vlc_debug.so"
+linux.debug.x86_64 = "res://addons/godot-vlc/bin/linux-x64/libgodot_vlc.so"
 linux.release.x86_64 = "res://addons/godot-vlc/bin/linux-x64/libgodot_vlc.so"
 
 [dependencies]
