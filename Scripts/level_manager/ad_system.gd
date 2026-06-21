@@ -3,7 +3,7 @@ extends Node
 
 var _overlay: Control
 var _player: VLCMediaPlayer
-var _skip_btn: Button
+var _skip_label: Label
 var _skip_timer: Timer
 var _http: HTTPRequest
 var _info_label: Label
@@ -23,53 +23,22 @@ const AD_CACHE_DIR := "user://ad_cache"
 func _init(parent: Node, info_label: Label) -> void:
 	parent.add_child(self)
 	_info_label = info_label
-	_overlay = Control.new()
-	_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_overlay.visible = false
-	_overlay.z_index = 100
-	_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
-	parent.add_child(_overlay)
 
-	var bg := ColorRect.new()
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	bg.color = Color(0, 0, 0, 1)
-	bg.mouse_filter = Control.MOUSE_FILTER_STOP
-	_overlay.add_child(bg)
+	var scene := preload("res://Scenes/ad_overlay.tscn").instantiate()
+	_overlay = scene
+	_overlay.visible = false
+	_overlay.gui_input.connect(_on_overlay_input)
+	parent.add_child(_overlay)
 
 	_player = VLCMediaPlayer.new()
 	_player.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_player.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_overlay.add_child(_player)
 
-	_skip_btn = Button.new()
-	_skip_btn.text = "跳过"
-	_skip_btn.visible = false
-	_skip_btn.custom_minimum_size = Vector2(80, 36)
-	_skip_btn.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	_skip_btn.offset_left = -96
-	_skip_btn.offset_top = 20
-	_skip_btn.offset_right = -20
-	_skip_btn.offset_bottom = 56
-	_skip_btn.add_theme_color_override("font_color", Color(1, 1, 1, 0.85))
-	_skip_btn.add_theme_font_size_override("font_size", 14)
-	var skip_style := StyleBoxFlat.new()
-	skip_style.bg_color = Color(0.15, 0.15, 0.2, 0.6)
-	skip_style.corner_radius_top_left = 18
-	skip_style.corner_radius_top_right = 18
-	skip_style.corner_radius_bottom_right = 18
-	skip_style.corner_radius_bottom_left = 18
-	_skip_btn.add_theme_stylebox_override("normal", skip_style)
-	var skip_hover := skip_style.duplicate()
-	skip_hover.bg_color = Color(0.3, 0.3, 0.35, 0.8)
-	_skip_btn.add_theme_stylebox_override("hover", skip_hover)
-	_skip_btn.add_theme_stylebox_override("pressed", skip_hover)
-	_skip_btn.pressed.connect(_on_skip)
-	_overlay.add_child(_skip_btn)
+	_skip_label = _overlay.get_node("SkipLabel")
 
-	_skip_timer = Timer.new()
-	_skip_timer.wait_time = 5.0
-	_skip_timer.one_shot = true
+	_skip_timer = _overlay.get_node("SkipTimer")
 	_skip_timer.timeout.connect(_on_skip_timer_timeout)
-	_overlay.add_child(_skip_timer)
 
 	_http = HTTPRequest.new()
 	parent.add_child(_http)
@@ -158,7 +127,7 @@ func _on_downloaded(result: int, response_code: int, _headers: PackedStringArray
 func _play(video_path: String) -> void:
 	playback_started.emit()
 	_overlay.visible = true
-	_skip_btn.visible = false
+	_skip_label.visible = false
 	_reward_pending = false
 
 	var media := VLCMedia.load_from_file(video_path)
@@ -177,7 +146,15 @@ func _play(video_path: String) -> void:
 	tw.tween_property(_overlay, "modulate:a", 1.0, 0.3)
 
 func _on_skip_timer_timeout() -> void:
-	_skip_btn.visible = true
+	_skip_label.visible = true
+
+func _on_overlay_input(event: InputEvent) -> void:
+	if not _overlay.visible:
+		return
+	if not _skip_label.visible:
+		return
+	if event is InputEventMouseButton:
+		_on_skip()
 
 func _on_skip() -> void:
 	if _reward_pending:
@@ -190,7 +167,7 @@ func _on_skip() -> void:
 	if music_bus_idx >= 0:
 		AudioServer.set_bus_mute(music_bus_idx, _ad_music_muted)
 
-	if _skip_btn.visible:
+	if _skip_label.visible:
 		_claim_reward()
 
 func _claim_reward() -> void:

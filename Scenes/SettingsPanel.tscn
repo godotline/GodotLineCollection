@@ -429,3 +429,8 @@ layout_mode = 2
 theme_override_colors/font_color = Color(1, 1, 1, 0.85)
 theme_override_font_sizes/font_size = 13
 text = "开启"
+
+[node name="ConfirmDialog" type="AcceptDialog" parent="."]
+title = "清除缓存"
+dialog_text = "确定要清除所有缓存文件吗？"
+size = Vector2i(300, 120)

@@ -51,7 +51,7 @@ func _ready() -> void:
 	Engine.time_scale = 1.0
 
 	_music_preview = MusicPreview.new(self)
-	_energy_system = EnergySystem.new(header_box, info_label)
+	_energy_system = EnergySystem.new(header_box.get_node("EnergyLabel"), header_box.get_node("WatchAdBtn"))
 	_ad_system = AdSystem.new(self, info_label)
 	_pck_loader = PCKLoader.new()
 	_pck_loader.setup(_verification_ui, info_label)
